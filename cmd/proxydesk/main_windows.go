@@ -72,11 +72,12 @@ func main() {
 	state.selected = -1
 	countries := allCountries()
 	defaultCountry := defaultCountryIndex(countries, "US")
+	filteredCountries := append([]string{}, countries...)
 	detectedLANIP := detectLANIP()
 
 	var mw *walk.MainWindow
 	var countryCB, localProtocolCB, protocolCB, portCB *walk.ComboBox
-	var listenHostEdit, portStartEdit, portEndEdit, apiEndpoint, apiCountryParam, apiJSONKey *walk.LineEdit
+	var countrySearchEdit, listenHostEdit, portStartEdit, portEndEdit, apiEndpoint, apiCountryParam, apiJSONKey *walk.LineEdit
 	var upstreamEdit, logBox *walk.TextEdit
 	var routeList *walk.ListBox
 	var contentTitle *walk.Label
@@ -108,13 +109,56 @@ func main() {
 	}
 
 	selectedCountry := func() string {
-		idx := countryCB.CurrentIndex()
-		if idx < 0 || idx >= len(countries) {
-			return countries[0]
+		text := strings.TrimSpace(countryCB.Text())
+		if text != "" {
+			for _, country := range countries {
+				if strings.EqualFold(country, text) {
+					return country
+				}
+			}
+			if strings.Contains(text, " - ") {
+				return text
+			}
 		}
-		return countries[idx]
+		idx := countryCB.CurrentIndex()
+		if idx >= 0 && idx < len(filteredCountries) {
+			return filteredCountries[idx]
+		}
+		if defaultCountry >= 0 && defaultCountry < len(countries) {
+			return countries[defaultCountry]
+		}
+		if len(countries) == 0 {
+			return ""
+		}
+		return countries[0]
 	}
-
+	refreshCountryOptions := func() {
+		if countryCB == nil || countrySearchEdit == nil {
+			return
+		}
+		current := selectedCountry()
+		filteredCountries = filterCountries(countries, countrySearchEdit.Text())
+		_ = countryCB.SetModel(filteredCountries)
+		idx := countryIndex(filteredCountries, current)
+		if idx < 0 {
+			idx = 0
+		}
+		if len(filteredCountries) > 0 {
+			_ = countryCB.SetCurrentIndex(idx)
+			return
+		}
+		_ = countryCB.SetText("")
+	}
+	selectCountryCode := func(code string) {
+		if countrySearchEdit != nil {
+			_ = countrySearchEdit.SetText("")
+		}
+		filteredCountries = append([]string{}, countries...)
+		if countryCB != nil {
+			_ = countryCB.SetModel(filteredCountries)
+			_ = countryCB.SetCurrentIndex(defaultCountryIndex(filteredCountries, code))
+		}
+	}
 	selectedLocalProtocol := func() core.Protocol {
 		if localProtocolCB.CurrentIndex() == 1 {
 			return core.ProtocolSOCKS5
@@ -312,7 +356,7 @@ func main() {
 		_ = listenHostEdit.SetText(route.LocalHost)
 		refreshPortOptions(route.LocalHTTPPort)
 		if route.CountryCode != "" {
-			_ = countryCB.SetCurrentIndex(defaultCountryIndex(countries, route.CountryCode))
+			selectCountryCode(route.CountryCode)
 		}
 		if route.LocalProtocol == core.ProtocolSOCKS5 {
 			_ = localProtocolCB.SetCurrentIndex(1)
@@ -653,7 +697,7 @@ func main() {
 							},
 							HSpacer{},
 							Composite{
-								MinSize:    Size{Width: 260, Height: 56},
+								MinSize:    Size{Width: 190, Height: 56},
 								Layout:     VBox{Margins: Margins{Left: 14, Top: 8, Right: 14, Bottom: 8}, Spacing: 2},
 								Background: SolidColorBrush{Color: walk.RGB(202, 245, 233)},
 								Children: []Widget{
@@ -662,7 +706,15 @@ func main() {
 										Children: []Widget{
 											Label{Text: "当前环境出口", TextColor: walk.RGB(15, 94, 91)},
 											HSpacer{},
-											PushButton{Text: "↻", MinSize: Size{Width: 28, Height: 24}, OnClicked: refreshEnvironmentExit},
+											Label{
+												Text:      "↻",
+												Font:      Font{Family: "Microsoft YaHei UI", PointSize: 12, Bold: true},
+												TextColor: walk.RGB(14, 116, 101),
+												MinSize:   Size{Width: 20, Height: 20},
+												OnMouseDown: func(x, y int, button walk.MouseButton) {
+													refreshEnvironmentExit()
+												},
+											},
 										},
 									},
 									Label{
@@ -796,8 +848,10 @@ func main() {
 											Composite{
 												Layout: Grid{Columns: 2, MarginsZero: true, Spacing: 8},
 												Children: []Widget{
+													Label{Text: "国家搜索", TextColor: walk.RGB(71, 85, 105)},
+													LineEdit{AssignTo: &countrySearchEdit, MinSize: Size{Height: 26}, OnTextChanged: refreshCountryOptions},
 													Label{Text: "配置国家/地区", TextColor: walk.RGB(71, 85, 105)},
-													ComboBox{AssignTo: &countryCB, Model: countries, CurrentIndex: defaultCountry, MinSize: Size{Height: 26}},
+													ComboBox{AssignTo: &countryCB, Model: filteredCountries, CurrentIndex: defaultCountry, MinSize: Size{Height: 26}},
 													Label{Text: "本地协议", TextColor: walk.RGB(71, 85, 105)},
 													ComboBox{AssignTo: &localProtocolCB, Model: []string{"HTTP/HTTPS", "SOCKS5"}, CurrentIndex: 0, MinSize: Size{Height: 26}, OnCurrentIndexChanged: markConfigChanged},
 													Label{Text: "上游协议", TextColor: walk.RGB(71, 85, 105)},
@@ -954,6 +1008,29 @@ func defaultCountryIndex(countries []string, code string) int {
 		}
 	}
 	return 0
+}
+
+func countryIndex(countries []string, value string) int {
+	for i, country := range countries {
+		if strings.EqualFold(country, value) {
+			return i
+		}
+	}
+	return -1
+}
+
+func filterCountries(countries []string, query string) []string {
+	query = strings.ToLower(strings.TrimSpace(query))
+	if query == "" {
+		return append([]string{}, countries...)
+	}
+	filtered := []string{}
+	for _, country := range countries {
+		if strings.Contains(strings.ToLower(country), query) {
+			filtered = append(filtered, country)
+		}
+	}
+	return filtered
 }
 
 func environmentCountryDisplay(info publicIPInfo) string {
