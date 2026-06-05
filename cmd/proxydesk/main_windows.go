@@ -84,6 +84,7 @@ func main() {
 	var routeList *walk.ListBox
 	var contentTitle *walk.Label
 	var dashboardPage, configPage, routePage, settingsPage *walk.Composite
+	var settingsPortPage, settingsAPIPage, settingsLogPage *walk.Composite
 	var statusLabel, exitIPLabel, upstreamLabel, errorLabel, localProtocolLabel, upstreamProtocolLabel *walk.Label
 	var envExitLabel, localIPLabel *walk.Label
 	var actualExitLabel *walk.Label
@@ -672,6 +673,19 @@ func main() {
 			}
 		}
 	}
+	openSettingsSection := func(index int) func() {
+		return func() {
+			pages := []*walk.Composite{settingsPortPage, settingsAPIPage, settingsLogPage}
+			if index < 0 || index >= len(pages) {
+				return
+			}
+			for i, page := range pages {
+				if page != nil {
+					page.SetVisible(i == index)
+				}
+			}
+		}
+	}
 	updateEnvironmentExit := func() {
 		for i := 0; i < 20; i++ {
 			if envExitLabel != nil && mw != nil {
@@ -940,80 +954,122 @@ func main() {
 							Composite{
 								AssignTo: &settingsPage,
 								Visible:  false,
-								Layout:   VBox{Margins: Margins{Left: 12, Top: 12, Right: 12, Bottom: 12}, Spacing: 10},
+								Layout:   HBox{Margins: Margins{Left: 12, Top: 12, Right: 12, Bottom: 12}, Spacing: 12},
 								Children: []Widget{
-									GroupBox{
-										Title:      "端口范围",
-										Layout:     VBox{Margins: Margins{Left: 14, Top: 12, Right: 14, Bottom: 12}, Spacing: 10},
-										Background: SolidColorBrush{Color: walk.RGB(250, 255, 253)},
+									Composite{
+										MinSize:    Size{Width: 150, Height: 420},
+										MaxSize:    Size{Width: 150},
+										Layout:     VBox{Margins: Margins{Left: 12, Top: 14, Right: 12, Bottom: 14}, Spacing: 10},
+										Background: SolidColorBrush{Color: walk.RGB(223, 249, 241)},
 										Children: []Widget{
-											Composite{
-												Layout: Grid{Columns: 2, MarginsZero: true, Spacing: 8},
-												Children: []Widget{
-													Label{Text: "端口起始", TextColor: walk.RGB(71, 85, 105)},
-													LineEdit{AssignTo: &portStartEdit, Text: "10000", MinSize: Size{Height: 26}, OnTextChanged: portRangeChanged},
-													Label{Text: "端口结束", TextColor: walk.RGB(71, 85, 105)},
-													LineEdit{AssignTo: &portEndEdit, Text: "10099", MinSize: Size{Height: 26}, OnTextChanged: portRangeChanged},
-												},
-											},
-											Label{Text: "本地端口下拉会按这个范围生成，并自动排除转发列表里已占用的端口。", TextColor: walk.RGB(100, 116, 139)},
+											Label{Text: "设置模块", Font: Font{Family: "Microsoft YaHei UI", PointSize: 10, Bold: true}, TextColor: walk.RGB(11, 47, 71)},
+											PushButton{Text: "端口范围", MinSize: Size{Height: 34}, Background: SolidColorBrush{Color: walk.RGB(35, 180, 150)}, OnClicked: openSettingsSection(0)},
+											PushButton{Text: "供应商 API", MinSize: Size{Height: 34}, OnClicked: openSettingsSection(1)},
+											PushButton{Text: "运行日志", MinSize: Size{Height: 34}, OnClicked: openSettingsSection(2)},
+											VSpacer{},
+											Label{Text: "端口和 API 共用同一个可用端口池。", TextColor: walk.RGB(37, 99, 105)},
 										},
 									},
-									GroupBox{
-										Title:      "供应商 API",
-										Layout:     VBox{Margins: Margins{Left: 14, Top: 12, Right: 14, Bottom: 12}, Spacing: 10},
-										Background: SolidColorBrush{Color: walk.RGB(250, 255, 253)},
+									Composite{
+										StretchFactor: 1,
+										Layout:        VBox{MarginsZero: true},
 										Children: []Widget{
 											Composite{
-												Layout: Grid{Columns: 2, MarginsZero: true, Spacing: 8},
+												AssignTo: &settingsPortPage,
+												Layout:   VBox{MarginsZero: true, Spacing: 10},
 												Children: []Widget{
-													Label{Text: "国家搜索"},
-													LineEdit{AssignTo: &countrySearchEdit, MinSize: Size{Height: 26}, OnTextChanged: refreshCountryOptions},
-													Label{Text: "国家/地区"},
-													ComboBox{AssignTo: &countryCB, Model: filteredCountries, CurrentIndex: defaultCountry, MinSize: Size{Height: 26}},
-													Label{Text: "本地协议"},
-													ComboBox{AssignTo: &apiLocalProtocolCB, Model: []string{"HTTP/HTTPS", "SOCKS5"}, CurrentIndex: 0, MinSize: Size{Height: 26}},
-													Label{Text: "上游协议"},
-													ComboBox{AssignTo: &apiProtocolCB, Model: []string{"HTTP", "SOCKS5"}, CurrentIndex: 0, MinSize: Size{Height: 26}},
-													Label{Text: "本地端口"},
-													ComboBox{AssignTo: &apiPortCB, Model: portOptions(0), CurrentIndex: 0, MinSize: Size{Height: 26}},
-													Label{Text: "API 地址"},
-													LineEdit{AssignTo: &apiEndpoint, Text: "http://gen.lokiproxy.com/gen?ptype=13&count=1&proto=http&stype=text&split=rn", MinSize: Size{Height: 26}},
-													Label{Text: "国家参数"},
-													LineEdit{AssignTo: &apiCountryParam, Text: "region", MinSize: Size{Height: 26}},
-													Label{Text: "JSON 字段"},
-													LineEdit{AssignTo: &apiJSONKey, MinSize: Size{Height: 26}},
+													GroupBox{
+														Title:      "端口范围",
+														Layout:     VBox{Margins: Margins{Left: 14, Top: 12, Right: 14, Bottom: 12}, Spacing: 10},
+														Background: SolidColorBrush{Color: walk.RGB(250, 255, 253)},
+														Children: []Widget{
+															Composite{
+																Layout: Grid{Columns: 2, MarginsZero: true, Spacing: 8},
+																Children: []Widget{
+																	Label{Text: "端口起始", TextColor: walk.RGB(71, 85, 105)},
+																	LineEdit{AssignTo: &portStartEdit, Text: "10000", MinSize: Size{Height: 26}, OnTextChanged: portRangeChanged},
+																	Label{Text: "端口结束", TextColor: walk.RGB(71, 85, 105)},
+																	LineEdit{AssignTo: &portEndEdit, Text: "10099", MinSize: Size{Height: 26}, OnTextChanged: portRangeChanged},
+																},
+															},
+															Label{Text: "本地端口下拉会按这个范围生成，并自动排除转发列表里已占用的端口。", TextColor: walk.RGB(100, 116, 139)},
+														},
+													},
+													VSpacer{},
 												},
 											},
 											Composite{
-												Layout: HBox{MarginsZero: true},
+												AssignTo: &settingsAPIPage,
+												Visible:  false,
+												Layout:   VBox{MarginsZero: true, Spacing: 10},
 												Children: []Widget{
-													HSpacer{},
-													PushButton{Text: "按国家获取 IP", MinSize: Size{Width: 150, Height: 32}, Background: SolidColorBrush{Color: walk.RGB(35, 180, 150)}, OnClicked: fetchAPI},
+													GroupBox{
+														Title:      "供应商 API",
+														Layout:     VBox{Margins: Margins{Left: 14, Top: 12, Right: 14, Bottom: 12}, Spacing: 10},
+														Background: SolidColorBrush{Color: walk.RGB(250, 255, 253)},
+														Children: []Widget{
+															Composite{
+																Layout: Grid{Columns: 2, MarginsZero: true, Spacing: 8},
+																Children: []Widget{
+																	Label{Text: "国家搜索"},
+																	LineEdit{AssignTo: &countrySearchEdit, MinSize: Size{Height: 26}, OnTextChanged: refreshCountryOptions},
+																	Label{Text: "国家/地区"},
+																	ComboBox{AssignTo: &countryCB, Model: filteredCountries, CurrentIndex: defaultCountry, MinSize: Size{Height: 26}},
+																	Label{Text: "本地协议"},
+																	ComboBox{AssignTo: &apiLocalProtocolCB, Model: []string{"HTTP/HTTPS", "SOCKS5"}, CurrentIndex: 0, MinSize: Size{Height: 26}},
+																	Label{Text: "上游协议"},
+																	ComboBox{AssignTo: &apiProtocolCB, Model: []string{"HTTP", "SOCKS5"}, CurrentIndex: 0, MinSize: Size{Height: 26}},
+																	Label{Text: "本地端口"},
+																	ComboBox{AssignTo: &apiPortCB, Model: portOptions(0), CurrentIndex: 0, MinSize: Size{Height: 26}},
+																	Label{Text: "API 地址"},
+																	LineEdit{AssignTo: &apiEndpoint, Text: "http://gen.lokiproxy.com/gen?ptype=13&count=1&proto=http&stype=text&split=rn", MinSize: Size{Height: 26}},
+																	Label{Text: "国家参数"},
+																	LineEdit{AssignTo: &apiCountryParam, Text: "region", MinSize: Size{Height: 26}},
+																	Label{Text: "JSON 字段"},
+																	LineEdit{AssignTo: &apiJSONKey, MinSize: Size{Height: 26}},
+																},
+															},
+															Composite{
+																Layout: HBox{MarginsZero: true},
+																Children: []Widget{
+																	HSpacer{},
+																	PushButton{Text: "按国家获取 IP", MinSize: Size{Width: 150, Height: 32}, Background: SolidColorBrush{Color: walk.RGB(35, 180, 150)}, OnClicked: fetchAPI},
+																},
+															},
+														},
+													},
+													VSpacer{},
 												},
 											},
-										},
-									},
-									GroupBox{
-										Title:      "运行日志",
-										Layout:     VBox{Margins: Margins{Left: 14, Top: 12, Right: 14, Bottom: 12}, Spacing: 8},
-										Background: SolidColorBrush{Color: walk.RGB(250, 255, 253)},
-										Children: []Widget{
 											Composite{
-												Layout: HBox{MarginsZero: true},
+												AssignTo: &settingsLogPage,
+												Visible:  false,
+												Layout:   VBox{MarginsZero: true, Spacing: 10},
 												Children: []Widget{
-													Label{Text: "运行日志会自动滚动到底部，可手动滑动查看历史。", TextColor: walk.RGB(37, 99, 105)},
-													HSpacer{},
-													PushButton{Text: "清理日志", MinSize: Size{Width: 100, Height: 28}, OnClicked: clearLogs},
+													GroupBox{
+														Title:      "运行日志",
+														Layout:     VBox{Margins: Margins{Left: 14, Top: 12, Right: 14, Bottom: 12}, Spacing: 8},
+														Background: SolidColorBrush{Color: walk.RGB(250, 255, 253)},
+														Children: []Widget{
+															Composite{
+																Layout: HBox{MarginsZero: true},
+																Children: []Widget{
+																	Label{Text: "运行日志会自动滚动到底部，可手动滑动查看历史。", TextColor: walk.RGB(37, 99, 105)},
+																	HSpacer{},
+																	PushButton{Text: "清理日志", MinSize: Size{Width: 100, Height: 28}, OnClicked: clearLogs},
+																},
+															},
+															TextEdit{
+																AssignTo: &logBox,
+																ReadOnly: true,
+																MinSize:  Size{Height: 360},
+																Font:     Font{Family: "Consolas", PointSize: 9},
+																VScroll:  true,
+																HScroll:  true,
+															},
+														},
+													},
 												},
-											},
-											TextEdit{
-												AssignTo: &logBox,
-												ReadOnly: true,
-												MinSize:  Size{Height: 210},
-												Font:     Font{Family: "Consolas", PointSize: 9},
-												VScroll:  true,
-												HScroll:  true,
 											},
 										},
 									},
