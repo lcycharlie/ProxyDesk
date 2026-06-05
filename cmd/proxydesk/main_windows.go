@@ -80,7 +80,8 @@ func main() {
 	var routeList *walk.ListBox
 	var contentTitle *walk.Label
 	var dashboardPage, configPage, routePage, apiPage, logPage *walk.Composite
-	var statusLabel, exitIPLabel, upstreamLabel, localLabel, errorLabel, localProtocolLabel, upstreamProtocolLabel *walk.Label
+	var statusLabel, exitIPLabel, upstreamLabel, errorLabel, localProtocolLabel, upstreamProtocolLabel *walk.Label
+	var envExitLabel, localIPLabel *walk.Label
 	var configCountryLabel, actualExitLabel *walk.Label
 	loadingRoute := false
 
@@ -203,7 +204,6 @@ func main() {
 			statusLabel.SetTextColor(walk.RGB(123, 94, 0))
 		}
 		updateRunningProtocolLabels(route)
-		_ = localLabel.SetText(route.LocalHost + ":" + strconv.Itoa(route.LocalHTTPPort))
 		_ = upstreamLabel.SetText(proxyparse.Format(route.Upstream))
 		exitDisplay := "-"
 		if route.LastExitIP != "" {
@@ -383,7 +383,7 @@ func main() {
 		state.selected = idx
 		showRoute(route, true)
 		refreshRouteList()
-		appendLog("已启动本地 %s 代理 %s -> %s 上游 %s", route.LocalProtocol, localLabel.Text(), route.Upstream.Protocol, route.Upstream.Address())
+		appendLog("已启动本地 %s 代理 %s:%d -> %s 上游 %s", route.LocalProtocol, route.LocalHost, route.LocalHTTPPort, route.Upstream.Protocol, route.Upstream.Address())
 		if route.LocalHost == "0.0.0.0" {
 			appendLog("局域网设备请使用这台 Windows 电脑的内网 IP:%d 作为 %s 代理", route.LocalHTTPPort, route.LocalProtocol)
 		}
@@ -556,6 +556,27 @@ func main() {
 			}
 		}
 	}
+	updateEnvironmentExit := func() {
+		for i := 0; i < 20; i++ {
+			if envExitLabel != nil && mw != nil {
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		if envExitLabel == nil || mw == nil {
+			return
+		}
+		client := &http.Client{Timeout: 12 * time.Second}
+		info, err := fetchPublicIPInfo(client)
+		mw.Synchronize(func() {
+			if err != nil {
+				_ = envExitLabel.SetText("检测失败")
+				return
+			}
+			_ = envExitLabel.SetText(info.Display())
+		})
+	}
+	time.AfterFunc(300*time.Millisecond, updateEnvironmentExit)
 
 	exitCode, err := MainWindow{
 		AssignTo:   &mw,
@@ -589,14 +610,28 @@ func main() {
 							},
 							HSpacer{},
 							Composite{
-								MinSize:    Size{Width: 220, Height: 56},
+								MinSize:    Size{Width: 260, Height: 56},
 								Layout:     VBox{Margins: Margins{Left: 14, Top: 8, Right: 14, Bottom: 8}, Spacing: 2},
 								Background: SolidColorBrush{Color: walk.RGB(202, 245, 233)},
 								Children: []Widget{
-									Label{Text: "当前本地代理", TextColor: walk.RGB(15, 94, 91)},
+									Label{Text: "当前环境出口", TextColor: walk.RGB(15, 94, 91)},
 									Label{
-										AssignTo:  &localLabel,
-										Text:      detectedLANIP + ":7890",
+										AssignTo:  &envExitLabel,
+										Text:      "检测中...",
+										Font:      Font{Family: "Consolas", PointSize: 12, Bold: true},
+										TextColor: walk.RGB(14, 116, 101),
+									},
+								},
+							},
+							Composite{
+								MinSize:    Size{Width: 190, Height: 56},
+								Layout:     VBox{Margins: Margins{Left: 14, Top: 8, Right: 14, Bottom: 8}, Spacing: 2},
+								Background: SolidColorBrush{Color: walk.RGB(202, 245, 233)},
+								Children: []Widget{
+									Label{Text: "本地 IP", TextColor: walk.RGB(15, 94, 91)},
+									Label{
+										AssignTo:  &localIPLabel,
+										Text:      detectedLANIP,
 										Font:      Font{Family: "Consolas", PointSize: 12, Bold: true},
 										TextColor: walk.RGB(14, 116, 101),
 									},
@@ -606,7 +641,7 @@ func main() {
 					},
 					HSeparator{},
 					Composite{
-						Layout: HBox{MarginsZero: true, Spacing: 8},
+						Layout: HBox{MarginsZero: true, Spacing: 14},
 						Children: []Widget{
 							Label{Text: "状态"},
 							Label{
@@ -615,13 +650,10 @@ func main() {
 								Font:      Font{Family: "Microsoft YaHei UI", PointSize: 10, Bold: true},
 								TextColor: walk.RGB(123, 94, 0),
 							},
-							VSeparator{},
 							Label{Text: "出口 IP"},
 							Label{AssignTo: &exitIPLabel, Text: "-", TextColor: walk.RGB(14, 116, 101)},
-							VSeparator{},
 							Label{Text: "运行本地协议"},
 							Label{AssignTo: &localProtocolLabel, Text: "HTTP/HTTPS", TextColor: walk.RGB(14, 116, 101)},
-							VSeparator{},
 							Label{Text: "运行上游协议"},
 							Label{AssignTo: &upstreamProtocolLabel, Text: "HTTP", TextColor: walk.RGB(14, 116, 101)},
 						},
@@ -697,7 +729,7 @@ func main() {
 										Layout:     VBox{Margins: Margins{Left: 16, Top: 12, Right: 16, Bottom: 12}, Spacing: 8},
 										Background: SolidColorBrush{Color: walk.RGB(250, 255, 253)},
 										Children: []Widget{
-											Label{Text: "其他设备使用“当前本地代理”里的内网 IP:端口；工具需要 SOCKS5 时，本地协议请选择 SOCKS5。", TextColor: walk.RGB(37, 99, 105)},
+											Label{Text: "其他设备使用“本地 IP”加对应端口；工具需要 SOCKS5 时，本地协议请选择 SOCKS5。", TextColor: walk.RGB(37, 99, 105)},
 											Label{Text: "多条运行中的端口可以同时给不同浏览器、指纹浏览器或桌面工具使用。", TextColor: walk.RGB(37, 99, 105)},
 										},
 									},
