@@ -18,7 +18,6 @@ import (
 
 	"github.com/lxn/walk"
 	. "github.com/lxn/walk/declarative"
-	"github.com/lxn/win"
 	"golang.org/x/net/proxy"
 
 	core "proxydesk/internal/app"
@@ -79,7 +78,8 @@ func main() {
 	var listenHostEdit, portEdit, apiEndpoint, apiCountryParam, apiJSONKey *walk.LineEdit
 	var upstreamEdit, logBox *walk.TextEdit
 	var routeList *walk.ListBox
-	var mainTabs *walk.TabWidget
+	var contentTitle *walk.Label
+	var dashboardPage, configPage, routePage, apiPage, logPage *walk.Composite
 	var statusLabel, exitIPLabel, upstreamLabel, localLabel, errorLabel, localProtocolLabel, upstreamProtocolLabel *walk.Label
 	loadingRoute := false
 
@@ -528,30 +528,20 @@ func main() {
 			_ = logBox.SetText("")
 		}
 	}
-	minimizeWindow := func() {
-		if mw != nil {
-			win.ShowWindow(mw.Handle(), win.SW_MINIMIZE)
-		}
-	}
-	toggleMaximizeWindow := func() {
-		if mw == nil {
-			return
-		}
-		if win.IsZoomed(mw.Handle()) {
-			win.ShowWindow(mw.Handle(), win.SW_RESTORE)
-			return
-		}
-		win.ShowWindow(mw.Handle(), win.SW_MAXIMIZE)
-	}
-	closeWindow := func() {
-		if mw != nil {
-			_ = mw.Close()
-		}
-	}
+	pageNames := []string{"工作台", "线路配置", "转发列表", "供应商 API", "运行日志"}
 	openPage := func(index int) func() {
 		return func() {
-			if mainTabs != nil {
-				_ = mainTabs.SetCurrentIndex(index)
+			pages := []*walk.Composite{dashboardPage, configPage, routePage, apiPage, logPage}
+			if index < 0 || index >= len(pages) {
+				return
+			}
+			for i, page := range pages {
+				if page != nil {
+					page.SetVisible(i == index)
+				}
+			}
+			if contentTitle != nil {
+				_ = contentTitle.SetText(pageNames[index])
 			}
 		}
 	}
@@ -601,19 +591,6 @@ func main() {
 									},
 								},
 							},
-							Composite{
-								Layout: VBox{MarginsZero: true, Spacing: 4},
-								Children: []Widget{
-									Composite{
-										Layout: HBox{MarginsZero: true, Spacing: 6},
-										Children: []Widget{
-											PushButton{Text: "缩小", MinSize: Size{Width: 54, Height: 26}, OnClicked: minimizeWindow},
-											PushButton{Text: "放大/还原", MinSize: Size{Width: 82, Height: 26}, OnClicked: toggleMaximizeWindow},
-											PushButton{Text: "关闭", MinSize: Size{Width: 54, Height: 26}, OnClicked: closeWindow},
-										},
-									},
-								},
-							},
 						},
 					},
 					HSeparator{},
@@ -644,28 +621,28 @@ func main() {
 				HandleWidth: 8,
 				Children: []Widget{
 					Composite{
-						MinSize:    Size{Width: 170, Height: 520},
-						MaxSize:    Size{Width: 210},
+						MinSize:    Size{Width: 112, Height: 520},
+						MaxSize:    Size{Width: 126},
 						Background: SolidColorBrush{Color: walk.RGB(209, 246, 236)},
-						Layout:     VBox{Margins: Margins{Left: 14, Top: 18, Right: 14, Bottom: 18}, Spacing: 10},
+						Layout:     VBox{Margins: Margins{Left: 10, Top: 14, Right: 10, Bottom: 14}, Spacing: 8},
 						Children: []Widget{
-							Label{Text: "功能菜单", Font: Font{Family: "Microsoft YaHei UI", PointSize: 11, Bold: true}, TextColor: walk.RGB(11, 47, 71)},
-							PushButton{Text: "工作台", MinSize: Size{Height: 38}, Background: SolidColorBrush{Color: walk.RGB(35, 180, 150)}, OnClicked: openPage(0)},
-							PushButton{Text: "线路配置", MinSize: Size{Height: 38}, OnClicked: openPage(1)},
-							PushButton{Text: "转发列表", MinSize: Size{Height: 38}, OnClicked: openPage(2)},
-							PushButton{Text: "供应商 API", MinSize: Size{Height: 38}, OnClicked: openPage(3)},
-							PushButton{Text: "运行日志", MinSize: Size{Height: 38}, OnClicked: openPage(4)},
-							VSpacer{},
-							Label{Text: "配置国家用于取 IP；实际国家看出口检测结果。", TextColor: walk.RGB(37, 99, 105)},
+							Label{Text: "菜单", Font: Font{Family: "Microsoft YaHei UI", PointSize: 11, Bold: true}, TextColor: walk.RGB(11, 47, 71)},
+							PushButton{Text: "工作台", MinSize: Size{Height: 32}, Background: SolidColorBrush{Color: walk.RGB(35, 180, 150)}, OnClicked: openPage(0)},
+							PushButton{Text: "线路", MinSize: Size{Height: 32}, OnClicked: openPage(1)},
+							PushButton{Text: "转发", MinSize: Size{Height: 32}, OnClicked: openPage(2)},
+							PushButton{Text: "API", MinSize: Size{Height: 32}, OnClicked: openPage(3)},
+							PushButton{Text: "日志", MinSize: Size{Height: 32}, OnClicked: openPage(4)},
 						},
 					},
-					TabWidget{
-						AssignTo: &mainTabs,
-						MinSize:  Size{Width: 840, Height: 520},
-						Pages: []TabPage{
-							{
-								Title:  "工作台",
-								Layout: VBox{Margins: Margins{Left: 12, Top: 12, Right: 12, Bottom: 12}, Spacing: 12},
+					Composite{
+						MinSize:    Size{Width: 900, Height: 520},
+						Background: SolidColorBrush{Color: walk.RGB(247, 255, 252)},
+						Layout:     VBox{Margins: Margins{Left: 12, Top: 10, Right: 12, Bottom: 10}, Spacing: 8},
+						Children: []Widget{
+							Label{AssignTo: &contentTitle, Text: "工作台", Font: Font{Family: "Microsoft YaHei UI", PointSize: 13, Bold: true}, TextColor: walk.RGB(11, 47, 71)},
+							Composite{
+								AssignTo: &dashboardPage,
+								Layout:   VBox{Margins: Margins{Left: 12, Top: 12, Right: 12, Bottom: 12}, Spacing: 12},
 								Children: []Widget{
 									GroupBox{
 										Title:      "当前连接",
@@ -707,9 +684,10 @@ func main() {
 									VSpacer{},
 								},
 							},
-							{
-								Title:  "线路配置",
-								Layout: VBox{Margins: Margins{Left: 12, Top: 12, Right: 12, Bottom: 12}, Spacing: 10},
+							Composite{
+								AssignTo: &configPage,
+								Visible:  false,
+								Layout:   VBox{Margins: Margins{Left: 12, Top: 12, Right: 12, Bottom: 12}, Spacing: 10},
 								Children: []Widget{
 									GroupBox{
 										Title:      "线路配置",
@@ -750,9 +728,10 @@ func main() {
 									},
 								},
 							},
-							{
-								Title:  "转发列表",
-								Layout: VBox{Margins: Margins{Left: 12, Top: 12, Right: 12, Bottom: 12}, Spacing: 10},
+							Composite{
+								AssignTo: &routePage,
+								Visible:  false,
+								Layout:   VBox{Margins: Margins{Left: 12, Top: 12, Right: 12, Bottom: 12}, Spacing: 10},
 								Children: []Widget{
 									GroupBox{
 										Title:      "转发列表",
@@ -781,9 +760,10 @@ func main() {
 									},
 								},
 							},
-							{
-								Title:  "供应商 API",
-								Layout: VBox{Margins: Margins{Left: 12, Top: 12, Right: 12, Bottom: 12}, Spacing: 10},
+							Composite{
+								AssignTo: &apiPage,
+								Visible:  false,
+								Layout:   VBox{Margins: Margins{Left: 12, Top: 12, Right: 12, Bottom: 12}, Spacing: 10},
 								Children: []Widget{
 									GroupBox{
 										Title:      "供应商 API",
@@ -813,9 +793,10 @@ func main() {
 									},
 								},
 							},
-							{
-								Title:  "运行日志",
-								Layout: VBox{Margins: Margins{Left: 12, Top: 12, Right: 12, Bottom: 12}, Spacing: 8},
+							Composite{
+								AssignTo: &logPage,
+								Visible:  false,
+								Layout:   VBox{Margins: Margins{Left: 12, Top: 12, Right: 12, Bottom: 12}, Spacing: 8},
 								Children: []Widget{
 									Composite{
 										Layout: HBox{MarginsZero: true},
