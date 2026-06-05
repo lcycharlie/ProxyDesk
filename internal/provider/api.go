@@ -79,6 +79,13 @@ func (c Client) Fetch(ctx context.Context, countryCode string, protocol app.Prot
 		text = strings.TrimSpace(fmt.Sprint(value))
 	}
 
-	firstLine := strings.Split(text, "\n")[0]
+	text = strings.NewReplacer(`\r\n`, "\n", `\n`, "\n", "\r\n", "\n", "\r", "\n").Replace(text)
+	firstLine := ""
+	for _, line := range strings.Split(text, "\n") {
+		if strings.TrimSpace(line) != "" {
+			firstLine = strings.TrimSpace(line)
+			break
+		}
+	}
 	return proxyparse.ParseLine(firstLine, protocol)
 }
