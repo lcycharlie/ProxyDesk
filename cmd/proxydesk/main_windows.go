@@ -35,6 +35,7 @@ type runtimeState struct {
 func main() {
 	state := &runtimeState{}
 	countries := []string{"US - United States", "JP - Japan", "GB - United Kingdom", "DE - Germany", "SG - Singapore", "BR - Brazil", "IN - India"}
+	detectedLANIP := detectLANIP()
 
 	var mw *walk.MainWindow
 	var countryCB, protocolCB *walk.ComboBox
@@ -86,7 +87,7 @@ func main() {
 	buildRoute := func() (core.PortRoute, error) {
 		listenHost := strings.TrimSpace(listenHostEdit.Text())
 		if listenHost == "" {
-			listenHost = "127.0.0.1"
+			listenHost = detectedLANIP
 		}
 		if listenHost != "0.0.0.0" && net.ParseIP(listenHost) == nil && listenHost != "localhost" {
 			return core.PortRoute{}, fmt.Errorf("监听地址应为 127.0.0.1、本机内网 IP 或 0.0.0.0")
@@ -228,16 +229,17 @@ func main() {
 	}
 
 	enableSystemProxy := func() {
-		port, err := strconv.Atoi(strings.TrimSpace(portEdit.Text()))
+		route, err := buildRoute()
 		if err != nil {
-			walk.MsgBox(mw, "端口错误", err.Error(), walk.MsgBoxIconError)
-			return
-		}
-		if err := systemproxy.EnableHTTPProxy("127.0.0.1", port); err != nil {
 			walk.MsgBox(mw, "系统代理失败", err.Error(), walk.MsgBoxIconError)
 			return
 		}
-		appendLog("已开启 Windows HTTP/HTTPS 系统代理：127.0.0.1:%d", port)
+		host := localConnectHost(route)
+		if err := systemproxy.EnableHTTPProxy(host, route.LocalHTTPPort); err != nil {
+			walk.MsgBox(mw, "系统代理失败", err.Error(), walk.MsgBoxIconError)
+			return
+		}
+		appendLog("已开启 Windows HTTP/HTTPS 系统代理：%s:%d", host, route.LocalHTTPPort)
 	}
 
 	disableSystemProxy := func() {
@@ -291,7 +293,7 @@ func main() {
 									Label{Text: "当前本地代理", TextColor: walk.RGB(65, 85, 125)},
 									Label{
 										AssignTo:  &localLabel,
-										Text:      "127.0.0.1:7890",
+										Text:      detectedLANIP + ":7890",
 										Font:      Font{Family: "Consolas", PointSize: 12, Bold: true},
 										TextColor: walk.RGB(29, 78, 216),
 									},
@@ -339,14 +341,14 @@ func main() {
 									Label{Text: "上游协议", TextColor: walk.RGB(71, 85, 105)},
 									ComboBox{AssignTo: &protocolCB, Model: []string{"HTTP", "SOCKS5"}, CurrentIndex: 0, MinSize: Size{Height: 26}, OnCurrentIndexChanged: updateProtocolLabel},
 									Label{Text: "监听地址", TextColor: walk.RGB(71, 85, 105)},
-									LineEdit{AssignTo: &listenHostEdit, Text: "127.0.0.1", MinSize: Size{Height: 26}},
+									LineEdit{AssignTo: &listenHostEdit, Text: detectedLANIP, MinSize: Size{Height: 26}},
 									Label{Text: "本地端口", TextColor: walk.RGB(71, 85, 105)},
 									LineEdit{AssignTo: &portEdit, Text: "7890", MinSize: Size{Height: 26}},
 								},
 							},
 							Label{Text: "上游代理", TextColor: walk.RGB(71, 85, 105)},
 							TextEdit{AssignTo: &upstreamEdit, MinSize: Size{Width: 460, Height: 120}},
-							Label{Text: "本机使用 127.0.0.1；局域网共享填 0.0.0.0，其他设备连接这台 Windows 电脑的内网 IP:端口。", TextColor: walk.RGB(100, 116, 139)},
+							Label{Text: "默认自动使用本机内网 IP；如要监听所有网卡可填 0.0.0.0，其他设备连接内网 IP:端口。", TextColor: walk.RGB(100, 116, 139)},
 							Composite{
 								Layout: HBox{MarginsZero: true, Spacing: 8},
 								Children: []Widget{
@@ -462,11 +464,65 @@ func splitCountry(value string) (string, string) {
 	return parts[0], parts[1]
 }
 
-func checkIP(route core.PortRoute) (string, error) {
-	host := route.LocalHost
-	if host == "" || host == "0.0.0.0" {
-		host = "127.0.0.1"
+func detectLANIP() string {
+	conn, err := net.DialTimeout("udp", "8.8.8.8:80", 2*time.Second)
+	if err == nil {
+		defer conn.Close()
+		if addr, ok := conn.LocalAddr().(*net.UDPAddr); ok && isUsableLANIP(addr.IP) {
+			return addr.IP.String()
+		}
 	}
+
+	interfaces, err := net.Interfaces()
+	if err != nil {
+		return "127.0.0.1"
+	}
+	for _, iface := range interfaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			var ip net.IP
+			switch v := addr.(type) {
+			case *net.IPNet:
+				ip = v.IP
+			case *net.IPAddr:
+				ip = v.IP
+			}
+			if isUsableLANIP(ip) {
+				return ip.String()
+			}
+		}
+	}
+	return "127.0.0.1"
+}
+
+func isUsableLANIP(ip net.IP) bool {
+	if ip == nil {
+		return false
+	}
+	ip = ip.To4()
+	if ip == nil || ip.IsLoopback() || ip.IsUnspecified() {
+		return false
+	}
+	return ip.IsPrivate()
+}
+
+func localConnectHost(route core.PortRoute) string {
+	switch route.LocalHost {
+	case "", "0.0.0.0":
+		return "127.0.0.1"
+	default:
+		return route.LocalHost
+	}
+}
+
+func checkIP(route core.PortRoute) (string, error) {
+	host := localConnectHost(route)
 	localProxyURL := "http://" + net.JoinHostPort(host, strconv.Itoa(route.LocalHTTPPort))
 	parsedProxyURL, err := url.Parse(localProxyURL)
 	if err != nil {
