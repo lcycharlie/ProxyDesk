@@ -10,7 +10,15 @@ import (
 )
 
 func EnableHTTPProxy(host string, port int) error {
-	server := "http=" + host + ":" + strconv.Itoa(port) + ";https=" + host + ":" + strconv.Itoa(port)
+	return EnableProxy(host, port, "HTTP")
+}
+
+func EnableProxy(host string, port int, protocol string) error {
+	addr := host + ":" + strconv.Itoa(port)
+	server := "http=" + addr + ";https=" + addr
+	if protocol == "SOCKS5" {
+		server = "socks=" + addr
+	}
 	cmd := exec.Command("reg", "add", `HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings`, "/v", "ProxyServer", "/t", "REG_SZ", "/d", server, "/f")
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("set ProxyServer: %w", err)

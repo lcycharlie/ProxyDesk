@@ -29,6 +29,7 @@ type PortRoute struct {
 	LocalHost      string        `json:"local_host"`
 	LocalHTTPPort  int           `json:"local_http_port"`
 	LocalSocksPort int           `json:"local_socks_port"`
+	LocalProtocol  Protocol      `json:"local_protocol"`
 	Protocol       Protocol      `json:"protocol"`
 	Upstream       UpstreamProxy `json:"upstream"`
 	Enabled        bool          `json:"enabled"`

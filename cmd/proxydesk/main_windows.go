@@ -28,8 +28,10 @@ import (
 )
 
 type runtimeState struct {
-	server *localproxy.HTTPServer
-	route  core.PortRoute
+	server interface {
+		Stop(context.Context) error
+	}
+	route core.PortRoute
 }
 
 func main() {
@@ -38,10 +40,10 @@ func main() {
 	detectedLANIP := detectLANIP()
 
 	var mw *walk.MainWindow
-	var countryCB, protocolCB *walk.ComboBox
+	var countryCB, localProtocolCB, protocolCB *walk.ComboBox
 	var listenHostEdit, portEdit, apiEndpoint, apiCountryParam, apiJSONKey *walk.LineEdit
 	var upstreamEdit, logBox *walk.TextEdit
-	var statusLabel, exitIPLabel, upstreamLabel, localLabel, errorLabel, upstreamProtocolLabel *walk.Label
+	var statusLabel, exitIPLabel, upstreamLabel, localLabel, errorLabel, localProtocolLabel, upstreamProtocolLabel *walk.Label
 
 	appendLogDirect := func(format string, args ...any) {
 		if logBox == nil {
@@ -72,15 +74,28 @@ func main() {
 		return countries[idx]
 	}
 
-	selectedProtocol := func() core.Protocol {
+	selectedLocalProtocol := func() core.Protocol {
+		if localProtocolCB.CurrentIndex() == 1 {
+			return core.ProtocolSOCKS5
+		}
+		return core.ProtocolHTTP
+	}
+	selectedUpstreamProtocol := func() core.Protocol {
 		if protocolCB.CurrentIndex() == 1 {
 			return core.ProtocolSOCKS5
 		}
 		return core.ProtocolHTTP
 	}
-	updateProtocolLabel := func() {
+	updateProtocolLabels := func() {
+		if localProtocolLabel != nil {
+			if selectedLocalProtocol() == core.ProtocolSOCKS5 {
+				_ = localProtocolLabel.SetText("SOCKS5")
+			} else {
+				_ = localProtocolLabel.SetText("HTTP/HTTPS")
+			}
+		}
 		if upstreamProtocolLabel != nil {
-			_ = upstreamProtocolLabel.SetText(string(selectedProtocol()))
+			_ = upstreamProtocolLabel.SetText(string(selectedUpstreamProtocol()))
 		}
 	}
 
@@ -96,13 +111,14 @@ func main() {
 		if err != nil || port < 1 || port > 65535 {
 			return core.PortRoute{}, fmt.Errorf("端口需要在 1-65535 之间")
 		}
-		protocol := selectedProtocol()
+		localProtocol := selectedLocalProtocol()
+		upstreamProtocol := selectedUpstreamProtocol()
 
 		line := strings.TrimSpace(upstreamEdit.Text())
 		if strings.Contains(line, "\n") {
 			line = strings.TrimSpace(strings.Split(line, "\n")[0])
 		}
-		upstream, err := proxyparse.ParseLine(line, protocol)
+		upstream, err := proxyparse.ParseLine(line, upstreamProtocol)
 		if err != nil {
 			return core.PortRoute{}, err
 		}
@@ -115,7 +131,8 @@ func main() {
 			CountryName:   countryName,
 			LocalHost:     listenHost,
 			LocalHTTPPort: port,
-			Protocol:      protocol,
+			LocalProtocol: localProtocol,
+			Protocol:      upstreamProtocol,
 			Upstream:      upstream,
 			Enabled:       true,
 			UpdatedAt:     time.Now(),
@@ -131,8 +148,23 @@ func main() {
 		if state.server != nil {
 			_ = state.server.Stop(context.Background())
 		}
-		server := localproxy.NewHTTPServer(route)
-		server.OnLog = appendLog
+		var server interface {
+			Start() error
+			Stop(context.Context) error
+		}
+		switch route.LocalProtocol {
+		case core.ProtocolHTTP:
+			httpServer := localproxy.NewHTTPServer(route)
+			httpServer.OnLog = appendLog
+			server = httpServer
+		case core.ProtocolSOCKS5:
+			socksServer := localproxy.NewSOCKS5Server(route)
+			socksServer.OnLog = appendLog
+			server = socksServer
+		default:
+			walk.MsgBox(mw, "启动失败", "不支持的本地协议："+string(route.LocalProtocol), walk.MsgBoxIconError)
+			return
+		}
 		if err := server.Start(); err != nil {
 			_ = errorLabel.SetText(err.Error())
 			walk.MsgBox(mw, "启动失败", err.Error(), walk.MsgBoxIconError)
@@ -142,14 +174,13 @@ func main() {
 		state.route = route
 		_ = statusLabel.SetText("运行中")
 		statusLabel.SetTextColor(walk.RGB(22, 120, 75))
-		updateProtocolLabel()
+		updateProtocolLabels()
 		_ = localLabel.SetText(route.LocalHost + ":" + strconv.Itoa(route.LocalHTTPPort))
 		_ = upstreamLabel.SetText(proxyparse.Format(route.Upstream))
 		_ = errorLabel.SetText("-")
-		appendLog("已启动本地 HTTP 代理 %s -> %s 上游 %s", localLabel.Text(), route.Upstream.Protocol, route.Upstream.Address())
-		appendLog("浏览器/系统代理请配置为 HTTP/HTTPS：%s；不要把本地端口配置成 SOCKS5", localLabel.Text())
+		appendLog("已启动本地 %s 代理 %s -> %s 上游 %s", route.LocalProtocol, localLabel.Text(), route.Upstream.Protocol, route.Upstream.Address())
 		if route.LocalHost == "0.0.0.0" {
-			appendLog("局域网设备请使用这台 Windows 电脑的内网 IP:%d 作为 HTTP/HTTPS 代理", route.LocalHTTPPort)
+			appendLog("局域网设备请使用这台 Windows 电脑的内网 IP:%d 作为 %s 代理", route.LocalHTTPPort, route.LocalProtocol)
 		}
 	}
 
@@ -216,7 +247,7 @@ func main() {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 		defer cancel()
-		upstream, err := client.Fetch(ctx, countryCode, selectedProtocol())
+		upstream, err := client.Fetch(ctx, countryCode, selectedUpstreamProtocol())
 		if err != nil {
 			_ = errorLabel.SetText(err.Error())
 			appendLog("API 获取失败：%v", err)
@@ -235,11 +266,11 @@ func main() {
 			return
 		}
 		host := localConnectHost(route)
-		if err := systemproxy.EnableHTTPProxy(host, route.LocalHTTPPort); err != nil {
+		if err := systemproxy.EnableProxy(host, route.LocalHTTPPort, string(route.LocalProtocol)); err != nil {
 			walk.MsgBox(mw, "系统代理失败", err.Error(), walk.MsgBoxIconError)
 			return
 		}
-		appendLog("已开启 Windows HTTP/HTTPS 系统代理：%s:%d", host, route.LocalHTTPPort)
+		appendLog("已开启 Windows %s 系统代理：%s:%d", route.LocalProtocol, host, route.LocalHTTPPort)
 	}
 
 	disableSystemProxy := func() {
@@ -317,7 +348,7 @@ func main() {
 							Label{AssignTo: &exitIPLabel, Text: "-", TextColor: walk.RGB(30, 64, 175)},
 							VSeparator{},
 							Label{Text: "本地协议"},
-							Label{Text: "HTTP/HTTPS", TextColor: walk.RGB(30, 64, 175)},
+							Label{AssignTo: &localProtocolLabel, Text: "HTTP/HTTPS", TextColor: walk.RGB(30, 64, 175)},
 							VSeparator{},
 							Label{Text: "上游协议"},
 							Label{AssignTo: &upstreamProtocolLabel, Text: "HTTP", TextColor: walk.RGB(30, 64, 175)},
@@ -338,8 +369,10 @@ func main() {
 								Children: []Widget{
 									Label{Text: "国家/地区", TextColor: walk.RGB(71, 85, 105)},
 									ComboBox{AssignTo: &countryCB, Model: countries, CurrentIndex: 0, MinSize: Size{Height: 26}},
+									Label{Text: "本地协议", TextColor: walk.RGB(71, 85, 105)},
+									ComboBox{AssignTo: &localProtocolCB, Model: []string{"HTTP/HTTPS", "SOCKS5"}, CurrentIndex: 0, MinSize: Size{Height: 26}, OnCurrentIndexChanged: updateProtocolLabels},
 									Label{Text: "上游协议", TextColor: walk.RGB(71, 85, 105)},
-									ComboBox{AssignTo: &protocolCB, Model: []string{"HTTP", "SOCKS5"}, CurrentIndex: 0, MinSize: Size{Height: 26}, OnCurrentIndexChanged: updateProtocolLabel},
+									ComboBox{AssignTo: &protocolCB, Model: []string{"HTTP", "SOCKS5"}, CurrentIndex: 0, MinSize: Size{Height: 26}, OnCurrentIndexChanged: updateProtocolLabels},
 									Label{Text: "监听地址", TextColor: walk.RGB(71, 85, 105)},
 									LineEdit{AssignTo: &listenHostEdit, Text: detectedLANIP, MinSize: Size{Height: 26}},
 									Label{Text: "本地端口", TextColor: walk.RGB(71, 85, 105)},
@@ -348,7 +381,7 @@ func main() {
 							},
 							Label{Text: "上游代理", TextColor: walk.RGB(71, 85, 105)},
 							TextEdit{AssignTo: &upstreamEdit, MinSize: Size{Width: 460, Height: 120}},
-							Label{Text: "默认自动使用本机内网 IP；如要监听所有网卡可填 0.0.0.0，其他设备连接内网 IP:端口。", TextColor: walk.RGB(100, 116, 139)},
+							Label{Text: "其他设备按本地协议连接内网 IP:端口；要给工具用 SOCKS5，请把本地协议选 SOCKS5。", TextColor: walk.RGB(100, 116, 139)},
 							Composite{
 								Layout: HBox{MarginsZero: true, Spacing: 8},
 								Children: []Widget{
@@ -523,16 +556,28 @@ func localConnectHost(route core.PortRoute) string {
 
 func checkIP(route core.PortRoute) (string, error) {
 	host := localConnectHost(route)
-	localProxyURL := "http://" + net.JoinHostPort(host, strconv.Itoa(route.LocalHTTPPort))
-	parsedProxyURL, err := url.Parse(localProxyURL)
-	if err != nil {
-		return "", err
+	localAddr := net.JoinHostPort(host, strconv.Itoa(route.LocalHTTPPort))
+	transport := &http.Transport{}
+	switch route.LocalProtocol {
+	case core.ProtocolHTTP:
+		localProxyURL := "http://" + localAddr
+		parsedProxyURL, err := url.Parse(localProxyURL)
+		if err != nil {
+			return "", err
+		}
+		transport.Proxy = http.ProxyURL(parsedProxyURL)
+	case core.ProtocolSOCKS5:
+		dialer, err := proxy.SOCKS5("tcp", localAddr, nil, proxy.Direct)
+		if err != nil {
+			return "", err
+		}
+		transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return dialer.Dial(network, addr)
+		}
+	default:
+		return "", fmt.Errorf("unsupported local protocol %s", route.LocalProtocol)
 	}
-
-	client := &http.Client{
-		Transport: &http.Transport{Proxy: http.ProxyURL(parsedProxyURL)},
-		Timeout:   30 * time.Second,
-	}
+	client := &http.Client{Transport: transport, Timeout: 30 * time.Second}
 	return fetchPublicIP(client)
 }
 
