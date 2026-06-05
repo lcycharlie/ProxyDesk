@@ -44,6 +44,30 @@ func (r routeRuntime) running() bool {
 	return r.server != nil
 }
 
+type publicIPInfo struct {
+	IP      string
+	Country string
+	Region  string
+	City    string
+}
+
+func (i publicIPInfo) Display() string {
+	parts := []string{}
+	if i.IP != "" {
+		parts = append(parts, i.IP)
+	}
+	for _, part := range []string{i.Country, i.Region, i.City} {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			parts = append(parts, part)
+		}
+	}
+	if len(parts) == 0 {
+		return "-"
+	}
+	return strings.Join(parts, " ")
+}
+
 func main() {
 	state := &runtimeState{}
 	state.selected = -1
@@ -55,6 +79,7 @@ func main() {
 	var listenHostEdit, portEdit, apiEndpoint, apiCountryParam, apiJSONKey *walk.LineEdit
 	var upstreamEdit, logBox *walk.TextEdit
 	var routeList *walk.ListBox
+	var mainTabs *walk.TabWidget
 	var statusLabel, exitIPLabel, upstreamLabel, localLabel, errorLabel, localProtocolLabel, upstreamProtocolLabel *walk.Label
 	loadingRoute := false
 
@@ -126,13 +151,28 @@ func main() {
 		if rt.running() {
 			status = "运行中"
 		}
-		return fmt.Sprintf("[%s] %s:%d  本地:%s  上游:%s %s",
+		exit := "-"
+		if rt.route.LastExitIP != "" {
+			exit = publicIPInfo{
+				IP:      rt.route.LastExitIP,
+				Country: rt.route.LastExitCountry,
+				Region:  rt.route.LastExitRegion,
+				City:    rt.route.LastExitCity,
+			}.Display()
+		}
+		configCountry := strings.TrimSpace(rt.route.CountryCode)
+		if configCountry == "" {
+			configCountry = "-"
+		}
+		return fmt.Sprintf("[%s] %s:%d  本地:%s  上游:%s %s  配置:%s  实际出口:%s",
 			status,
 			rt.route.LocalHost,
 			rt.route.LocalHTTPPort,
 			rt.route.LocalProtocol,
 			rt.route.Upstream.Protocol,
 			rt.route.Upstream.Address(),
+			configCountry,
+			exit,
 		)
 	}
 	refreshRouteList := func() {
@@ -164,6 +204,16 @@ func main() {
 		updateRunningProtocolLabels(route)
 		_ = localLabel.SetText(route.LocalHost + ":" + strconv.Itoa(route.LocalHTTPPort))
 		_ = upstreamLabel.SetText(proxyparse.Format(route.Upstream))
+		exitDisplay := "-"
+		if route.LastExitIP != "" {
+			exitDisplay = publicIPInfo{
+				IP:      route.LastExitIP,
+				Country: route.LastExitCountry,
+				Region:  route.LastExitRegion,
+				City:    route.LastExitCity,
+			}.Display()
+		}
+		_ = exitIPLabel.SetText(exitDisplay)
 		_ = errorLabel.SetText("-")
 	}
 	loadSelectedRoute := func() {
@@ -389,15 +439,20 @@ func main() {
 			walk.MsgBox(mw, "提示", "请先启动本地转发", walk.MsgBoxIconInformation)
 			return
 		}
-		ip, err := checkIP(state.routes[idx].route)
+		info, err := checkIP(state.routes[idx].route)
 		if err != nil {
 			_ = errorLabel.SetText(err.Error())
 			appendLog("选中转发出口检测失败：%v", err)
 			return
 		}
-		_ = exitIPLabel.SetText(ip)
+		state.routes[idx].route.LastExitIP = info.IP
+		state.routes[idx].route.LastExitCountry = info.Country
+		state.routes[idx].route.LastExitRegion = info.Region
+		state.routes[idx].route.LastExitCity = info.City
+		refreshRouteList()
+		_ = exitIPLabel.SetText(info.Display())
 		_ = errorLabel.SetText("-")
-		appendLog("选中转发出口检测成功：%s", ip)
+		appendLog("选中转发出口检测成功：%s", info.Display())
 	}
 
 	testUpstream := func() {
@@ -406,17 +461,17 @@ func main() {
 			walk.MsgBox(mw, "上游代理无效", err.Error(), walk.MsgBoxIconError)
 			return
 		}
-		ip, err := checkUpstream(route.Upstream)
+		info, err := checkUpstream(route.Upstream)
 		if err != nil {
 			_ = errorLabel.SetText(err.Error())
 			appendLog("上游检测失败：%v", err)
 			walk.MsgBox(mw, "上游检测失败", err.Error(), walk.MsgBoxIconError)
 			return
 		}
-		_ = exitIPLabel.SetText(ip)
+		_ = exitIPLabel.SetText(info.Display())
 		_ = upstreamLabel.SetText(proxyparse.Format(route.Upstream))
 		_ = errorLabel.SetText("-")
-		appendLog("上游检测成功：%s", ip)
+		appendLog("上游检测成功：%s", info.Display())
 	}
 
 	fetchAPI := func() {
@@ -491,6 +546,13 @@ func main() {
 	closeWindow := func() {
 		if mw != nil {
 			_ = mw.Close()
+		}
+	}
+	openPage := func(index int) func() {
+		return func() {
+			if mainTabs != nil {
+				_ = mainTabs.SetCurrentIndex(index)
+			}
 		}
 	}
 
@@ -579,154 +641,199 @@ func main() {
 				},
 			},
 			HSplitter{
-				HandleWidth: 6,
+				HandleWidth: 8,
 				Children: []Widget{
-					GroupBox{
-						Title:   "线路配置",
-						MinSize: Size{Width: 520, Height: 290},
-						Layout:  VBox{Margins: Margins{Left: 14, Top: 12, Right: 14, Bottom: 12}, Spacing: 10},
-						Background: SolidColorBrush{
-							Color: walk.RGB(250, 255, 253),
-						},
-						Children: []Widget{
-							Composite{
-								Layout: Grid{Columns: 2, MarginsZero: true, Spacing: 8},
-								Children: []Widget{
-									Label{Text: "国家/地区", TextColor: walk.RGB(71, 85, 105)},
-									ComboBox{AssignTo: &countryCB, Model: countries, CurrentIndex: 0, MinSize: Size{Height: 26}},
-									Label{Text: "本地协议", TextColor: walk.RGB(71, 85, 105)},
-									ComboBox{AssignTo: &localProtocolCB, Model: []string{"HTTP/HTTPS", "SOCKS5"}, CurrentIndex: 0, MinSize: Size{Height: 26}, OnCurrentIndexChanged: markConfigChanged},
-									Label{Text: "上游协议", TextColor: walk.RGB(71, 85, 105)},
-									ComboBox{AssignTo: &protocolCB, Model: []string{"HTTP", "SOCKS5"}, CurrentIndex: 0, MinSize: Size{Height: 26}, OnCurrentIndexChanged: markConfigChanged},
-									Label{Text: "监听地址", TextColor: walk.RGB(71, 85, 105)},
-									LineEdit{AssignTo: &listenHostEdit, Text: detectedLANIP, MinSize: Size{Height: 26}, OnTextChanged: markConfigChanged},
-									Label{Text: "本地端口", TextColor: walk.RGB(71, 85, 105)},
-									LineEdit{AssignTo: &portEdit, Text: "7890", MinSize: Size{Height: 26}, OnTextChanged: markConfigChanged},
-								},
-							},
-							Label{Text: "上游代理", TextColor: walk.RGB(71, 85, 105)},
-							TextEdit{AssignTo: &upstreamEdit, MinSize: Size{Width: 460, Height: 120}, OnTextChanged: markConfigChanged},
-							Label{Text: "其他设备按本地协议连接内网 IP:端口；要给工具用 SOCKS5，请把本地协议选 SOCKS5。", TextColor: walk.RGB(100, 116, 139)},
-							Composite{
-								Layout: HBox{MarginsZero: true, Spacing: 8},
-								Children: []Widget{
-									PushButton{Text: "新增配置", MinSize: Size{Width: 90, Height: 32}, Background: SolidColorBrush{Color: walk.RGB(35, 180, 150)}, OnClicked: addRoute},
-									PushButton{Text: "更新选中", MinSize: Size{Width: 90, Height: 32}, OnClicked: updateRoute},
-									PushButton{
-										Text:       "启动选中",
-										MinSize:    Size{Width: 120, Height: 32},
-										Background: SolidColorBrush{Color: walk.RGB(35, 180, 150)},
-										Font:       Font{Family: "Microsoft YaHei UI", PointSize: 9, Bold: true},
-										OnClicked:  startRoute,
-									},
-									PushButton{Text: "停止选中", MinSize: Size{Width: 90, Height: 32}, OnClicked: stopRoute},
-									PushButton{Text: "测试当前上游", MinSize: Size{Width: 110, Height: 32}, OnClicked: testUpstream},
-									PushButton{Text: "测试选中出口", MinSize: Size{Width: 110, Height: 32}, OnClicked: testExitIP},
-									HSpacer{},
-								},
-							},
-						},
-					},
-					GroupBox{
-						Title:      "连接详情",
-						MinSize:    Size{Width: 430, Height: 290},
-						Layout:     VBox{Margins: Margins{Left: 14, Top: 12, Right: 14, Bottom: 12}, Spacing: 10},
-						Background: SolidColorBrush{Color: walk.RGB(250, 255, 253)},
-						Children: []Widget{
-							Composite{
-								Layout: Grid{Columns: 2, MarginsZero: true, Spacing: 8},
-								Children: []Widget{
-									Label{Text: "上游代理", TextColor: walk.RGB(71, 85, 105)},
-									Label{AssignTo: &upstreamLabel, Text: "-", TextColor: walk.RGB(15, 23, 42), EllipsisMode: EllipsisEnd},
-									Label{Text: "最近错误", TextColor: walk.RGB(71, 85, 105)},
-									Label{AssignTo: &errorLabel, Text: "-", TextColor: walk.RGB(185, 28, 28), EllipsisMode: EllipsisEnd},
-								},
-							},
-							HSeparator{},
-							Label{Text: "系统代理", Font: Font{Family: "Microsoft YaHei UI", PointSize: 10, Bold: true}, TextColor: walk.RGB(23, 37, 84)},
-							Label{Text: "需要让浏览器或多数桌面软件直接走代理时，可开启 Windows 系统代理。", TextColor: walk.RGB(100, 116, 139)},
-							Composite{
-								Layout: HBox{MarginsZero: true, Spacing: 8},
-								Children: []Widget{
-									PushButton{Text: "开启系统代理", MinSize: Size{Width: 130, Height: 32}, Background: SolidColorBrush{Color: walk.RGB(35, 180, 150)}, OnClicked: enableSystemProxy},
-									PushButton{Text: "关闭系统代理", MinSize: Size{Width: 130, Height: 32}, OnClicked: disableSystemProxy},
-									HSpacer{},
-								},
-							},
-						},
-					},
-				},
-			},
-			GroupBox{
-				Title:      "转发列表",
-				Layout:     VBox{Margins: Margins{Left: 12, Top: 10, Right: 12, Bottom: 10}, Spacing: 8},
-				Background: SolidColorBrush{Color: walk.RGB(250, 255, 253)},
-				Children: []Widget{
-					Label{Text: "选中哪一条，右侧详情、测试选中出口、开启系统代理就针对哪一条。运行中的多条端口都可以同时给外部使用。", TextColor: walk.RGB(37, 99, 105)},
-					ListBox{
-						AssignTo:              &routeList,
-						Model:                 []string{},
-						MinSize:               Size{Height: 120},
-						OnCurrentIndexChanged: loadSelectedRoute,
-					},
 					Composite{
-						Layout: HBox{MarginsZero: true, Spacing: 8},
+						MinSize:    Size{Width: 170, Height: 520},
+						MaxSize:    Size{Width: 210},
+						Background: SolidColorBrush{Color: walk.RGB(209, 246, 236)},
+						Layout:     VBox{Margins: Margins{Left: 14, Top: 18, Right: 14, Bottom: 18}, Spacing: 10},
 						Children: []Widget{
-							PushButton{Text: "启动选中", MinSize: Size{Width: 110, Height: 30}, Background: SolidColorBrush{Color: walk.RGB(35, 180, 150)}, OnClicked: startRoute},
-							PushButton{Text: "停止选中", MinSize: Size{Width: 110, Height: 30}, OnClicked: stopRoute},
-							PushButton{Text: "删除选中", MinSize: Size{Width: 110, Height: 30}, OnClicked: deleteRoute},
-							PushButton{Text: "停止全部", MinSize: Size{Width: 110, Height: 30}, OnClicked: stopAllRoutes},
-							HSpacer{},
+							Label{Text: "功能菜单", Font: Font{Family: "Microsoft YaHei UI", PointSize: 11, Bold: true}, TextColor: walk.RGB(11, 47, 71)},
+							PushButton{Text: "工作台", MinSize: Size{Height: 38}, Background: SolidColorBrush{Color: walk.RGB(35, 180, 150)}, OnClicked: openPage(0)},
+							PushButton{Text: "线路配置", MinSize: Size{Height: 38}, OnClicked: openPage(1)},
+							PushButton{Text: "转发列表", MinSize: Size{Height: 38}, OnClicked: openPage(2)},
+							PushButton{Text: "供应商 API", MinSize: Size{Height: 38}, OnClicked: openPage(3)},
+							PushButton{Text: "运行日志", MinSize: Size{Height: 38}, OnClicked: openPage(4)},
+							VSpacer{},
+							Label{Text: "配置国家用于取 IP；实际国家看出口检测结果。", TextColor: walk.RGB(37, 99, 105)},
 						},
 					},
-				},
-			},
-			TabWidget{
-				MinSize: Size{Height: 230},
-				Pages: []TabPage{
-					{
-						Title:  "供应商 API",
-						Layout: VBox{Margins: Margins{Left: 12, Top: 12, Right: 12, Bottom: 12}, Spacing: 10},
-						Children: []Widget{
-							Composite{
-								Layout: Grid{Columns: 2, MarginsZero: true, Spacing: 8},
+					TabWidget{
+						AssignTo: &mainTabs,
+						MinSize:  Size{Width: 840, Height: 520},
+						Pages: []TabPage{
+							{
+								Title:  "工作台",
+								Layout: VBox{Margins: Margins{Left: 12, Top: 12, Right: 12, Bottom: 12}, Spacing: 12},
 								Children: []Widget{
-									Label{Text: "API 地址"},
-									LineEdit{AssignTo: &apiEndpoint, MinSize: Size{Height: 26}},
-									Label{Text: "国家参数"},
-									LineEdit{AssignTo: &apiCountryParam, MinSize: Size{Height: 26}},
-									Label{Text: "JSON 字段"},
-									LineEdit{AssignTo: &apiJSONKey, MinSize: Size{Height: 26}},
+									GroupBox{
+										Title:      "当前连接",
+										Layout:     VBox{Margins: Margins{Left: 16, Top: 12, Right: 16, Bottom: 12}, Spacing: 10},
+										Background: SolidColorBrush{Color: walk.RGB(250, 255, 253)},
+										Children: []Widget{
+											Composite{
+												Layout: Grid{Columns: 2, MarginsZero: true, Spacing: 8},
+												Children: []Widget{
+													Label{Text: "上游代理", TextColor: walk.RGB(71, 85, 105)},
+													Label{AssignTo: &upstreamLabel, Text: "-", TextColor: walk.RGB(15, 23, 42), EllipsisMode: EllipsisEnd},
+													Label{Text: "最近错误", TextColor: walk.RGB(71, 85, 105)},
+													Label{AssignTo: &errorLabel, Text: "-", TextColor: walk.RGB(185, 28, 28), EllipsisMode: EllipsisEnd},
+												},
+											},
+											HSeparator{},
+											Label{Text: "系统代理", Font: Font{Family: "Microsoft YaHei UI", PointSize: 10, Bold: true}, TextColor: walk.RGB(23, 37, 84)},
+											Label{Text: "需要让浏览器或多数桌面软件直接走代理时，可开启 Windows 系统代理。", TextColor: walk.RGB(100, 116, 139)},
+											Composite{
+												Layout: HBox{MarginsZero: true, Spacing: 8},
+												Children: []Widget{
+													PushButton{Text: "开启系统代理", MinSize: Size{Width: 130, Height: 32}, Background: SolidColorBrush{Color: walk.RGB(35, 180, 150)}, OnClicked: enableSystemProxy},
+													PushButton{Text: "关闭系统代理", MinSize: Size{Width: 130, Height: 32}, OnClicked: disableSystemProxy},
+													PushButton{Text: "测试选中出口", MinSize: Size{Width: 130, Height: 32}, OnClicked: testExitIP},
+													HSpacer{},
+												},
+											},
+										},
+									},
+									GroupBox{
+										Title:      "使用提示",
+										Layout:     VBox{Margins: Margins{Left: 16, Top: 12, Right: 16, Bottom: 12}, Spacing: 8},
+										Background: SolidColorBrush{Color: walk.RGB(250, 255, 253)},
+										Children: []Widget{
+											Label{Text: "其他设备使用“当前本地代理”里的内网 IP:端口；工具需要 SOCKS5 时，本地协议请选择 SOCKS5。", TextColor: walk.RGB(37, 99, 105)},
+											Label{Text: "多条运行中的端口可以同时给不同浏览器、指纹浏览器或桌面工具使用。", TextColor: walk.RGB(37, 99, 105)},
+										},
+									},
+									VSpacer{},
 								},
 							},
-							Composite{
-								Layout: HBox{MarginsZero: true},
+							{
+								Title:  "线路配置",
+								Layout: VBox{Margins: Margins{Left: 12, Top: 12, Right: 12, Bottom: 12}, Spacing: 10},
 								Children: []Widget{
-									HSpacer{},
-									PushButton{Text: "按国家获取 IP", MinSize: Size{Width: 150, Height: 32}, OnClicked: fetchAPI},
+									GroupBox{
+										Title:      "线路配置",
+										Layout:     VBox{Margins: Margins{Left: 14, Top: 12, Right: 14, Bottom: 12}, Spacing: 10},
+										Background: SolidColorBrush{Color: walk.RGB(250, 255, 253)},
+										Children: []Widget{
+											Composite{
+												Layout: Grid{Columns: 2, MarginsZero: true, Spacing: 8},
+												Children: []Widget{
+													Label{Text: "配置国家/地区", TextColor: walk.RGB(71, 85, 105)},
+													ComboBox{AssignTo: &countryCB, Model: countries, CurrentIndex: 0, MinSize: Size{Height: 26}},
+													Label{Text: "本地协议", TextColor: walk.RGB(71, 85, 105)},
+													ComboBox{AssignTo: &localProtocolCB, Model: []string{"HTTP/HTTPS", "SOCKS5"}, CurrentIndex: 0, MinSize: Size{Height: 26}, OnCurrentIndexChanged: markConfigChanged},
+													Label{Text: "上游协议", TextColor: walk.RGB(71, 85, 105)},
+													ComboBox{AssignTo: &protocolCB, Model: []string{"HTTP", "SOCKS5"}, CurrentIndex: 0, MinSize: Size{Height: 26}, OnCurrentIndexChanged: markConfigChanged},
+													Label{Text: "监听地址", TextColor: walk.RGB(71, 85, 105)},
+													LineEdit{AssignTo: &listenHostEdit, Text: detectedLANIP, MinSize: Size{Height: 26}, OnTextChanged: markConfigChanged},
+													Label{Text: "本地端口", TextColor: walk.RGB(71, 85, 105)},
+													LineEdit{AssignTo: &portEdit, Text: "7890", MinSize: Size{Height: 26}, OnTextChanged: markConfigChanged},
+												},
+											},
+											Label{Text: "上游代理", TextColor: walk.RGB(71, 85, 105)},
+											TextEdit{AssignTo: &upstreamEdit, MinSize: Size{Height: 170}, OnTextChanged: markConfigChanged},
+											Label{Text: "配置国家用于供应商 API 或线路标记；实际国家/地区以“测试出口”检测结果为准。", TextColor: walk.RGB(100, 116, 139)},
+											Composite{
+												Layout: HBox{MarginsZero: true, Spacing: 8},
+												Children: []Widget{
+													PushButton{Text: "新增配置", MinSize: Size{Width: 90, Height: 32}, Background: SolidColorBrush{Color: walk.RGB(35, 180, 150)}, OnClicked: addRoute},
+													PushButton{Text: "更新选中", MinSize: Size{Width: 90, Height: 32}, OnClicked: updateRoute},
+													PushButton{Text: "启动选中", MinSize: Size{Width: 120, Height: 32}, Background: SolidColorBrush{Color: walk.RGB(35, 180, 150)}, Font: Font{Family: "Microsoft YaHei UI", PointSize: 9, Bold: true}, OnClicked: startRoute},
+													PushButton{Text: "停止选中", MinSize: Size{Width: 90, Height: 32}, OnClicked: stopRoute},
+													PushButton{Text: "测试当前上游", MinSize: Size{Width: 110, Height: 32}, OnClicked: testUpstream},
+													PushButton{Text: "测试选中出口", MinSize: Size{Width: 110, Height: 32}, OnClicked: testExitIP},
+													HSpacer{},
+												},
+											},
+										},
+									},
 								},
 							},
-						},
-					},
-					{
-						Title:  "运行日志",
-						Layout: VBox{Margins: Margins{Left: 12, Top: 12, Right: 12, Bottom: 12}, Spacing: 8},
-						Children: []Widget{
-							Composite{
-								Layout: HBox{MarginsZero: true},
+							{
+								Title:  "转发列表",
+								Layout: VBox{Margins: Margins{Left: 12, Top: 12, Right: 12, Bottom: 12}, Spacing: 10},
 								Children: []Widget{
-									Label{Text: "运行日志会自动滚动到底部，可手动滑动查看历史。", TextColor: walk.RGB(37, 99, 105)},
-									HSpacer{},
-									PushButton{Text: "清理日志", MinSize: Size{Width: 100, Height: 28}, OnClicked: clearLogs},
+									GroupBox{
+										Title:      "转发列表",
+										Layout:     VBox{Margins: Margins{Left: 12, Top: 10, Right: 12, Bottom: 10}, Spacing: 8},
+										Background: SolidColorBrush{Color: walk.RGB(250, 255, 253)},
+										Children: []Widget{
+											Label{Text: "选中哪一条，测试选中出口、开启系统代理就针对哪一条。列表中的“实际出口”会显示检测到的国家/地区。", TextColor: walk.RGB(37, 99, 105)},
+											ListBox{
+												AssignTo:              &routeList,
+												Model:                 []string{},
+												MinSize:               Size{Height: 280},
+												OnCurrentIndexChanged: loadSelectedRoute,
+											},
+											Composite{
+												Layout: HBox{MarginsZero: true, Spacing: 8},
+												Children: []Widget{
+													PushButton{Text: "启动选中", MinSize: Size{Width: 110, Height: 30}, Background: SolidColorBrush{Color: walk.RGB(35, 180, 150)}, OnClicked: startRoute},
+													PushButton{Text: "停止选中", MinSize: Size{Width: 110, Height: 30}, OnClicked: stopRoute},
+													PushButton{Text: "测试选中出口", MinSize: Size{Width: 120, Height: 30}, OnClicked: testExitIP},
+													PushButton{Text: "删除选中", MinSize: Size{Width: 110, Height: 30}, OnClicked: deleteRoute},
+													PushButton{Text: "停止全部", MinSize: Size{Width: 110, Height: 30}, OnClicked: stopAllRoutes},
+													HSpacer{},
+												},
+											},
+										},
+									},
 								},
 							},
-							TextEdit{
-								AssignTo: &logBox,
-								ReadOnly: true,
-								MinSize:  Size{Height: 170},
-								Font:     Font{Family: "Consolas", PointSize: 9},
-								VScroll:  true,
-								HScroll:  true,
+							{
+								Title:  "供应商 API",
+								Layout: VBox{Margins: Margins{Left: 12, Top: 12, Right: 12, Bottom: 12}, Spacing: 10},
+								Children: []Widget{
+									GroupBox{
+										Title:      "供应商 API",
+										Layout:     VBox{Margins: Margins{Left: 14, Top: 12, Right: 14, Bottom: 12}, Spacing: 10},
+										Background: SolidColorBrush{Color: walk.RGB(250, 255, 253)},
+										Children: []Widget{
+											Composite{
+												Layout: Grid{Columns: 2, MarginsZero: true, Spacing: 8},
+												Children: []Widget{
+													Label{Text: "API 地址"},
+													LineEdit{AssignTo: &apiEndpoint, MinSize: Size{Height: 26}},
+													Label{Text: "国家参数"},
+													LineEdit{AssignTo: &apiCountryParam, MinSize: Size{Height: 26}},
+													Label{Text: "JSON 字段"},
+													LineEdit{AssignTo: &apiJSONKey, MinSize: Size{Height: 26}},
+												},
+											},
+											Label{Text: "如果供应商支持国家参数，这里会按上方“配置国家/地区”请求；实际出口仍建议测试确认。", TextColor: walk.RGB(100, 116, 139)},
+											Composite{
+												Layout: HBox{MarginsZero: true},
+												Children: []Widget{
+													HSpacer{},
+													PushButton{Text: "按国家获取 IP", MinSize: Size{Width: 150, Height: 32}, Background: SolidColorBrush{Color: walk.RGB(35, 180, 150)}, OnClicked: fetchAPI},
+												},
+											},
+										},
+									},
+								},
+							},
+							{
+								Title:  "运行日志",
+								Layout: VBox{Margins: Margins{Left: 12, Top: 12, Right: 12, Bottom: 12}, Spacing: 8},
+								Children: []Widget{
+									Composite{
+										Layout: HBox{MarginsZero: true},
+										Children: []Widget{
+											Label{Text: "运行日志会自动滚动到底部，可手动滑动查看历史。", TextColor: walk.RGB(37, 99, 105)},
+											HSpacer{},
+											PushButton{Text: "清理日志", MinSize: Size{Width: 100, Height: 28}, OnClicked: clearLogs},
+										},
+									},
+									TextEdit{
+										AssignTo: &logBox,
+										ReadOnly: true,
+										MinSize:  Size{Height: 430},
+										Font:     Font{Family: "Consolas", PointSize: 9},
+										VScroll:  true,
+										HScroll:  true,
+									},
+								},
 							},
 						},
 					},
@@ -817,7 +924,7 @@ func localConnectHost(route core.PortRoute) string {
 	}
 }
 
-func checkIP(route core.PortRoute) (string, error) {
+func checkIP(route core.PortRoute) (publicIPInfo, error) {
 	host := localConnectHost(route)
 	localAddr := net.JoinHostPort(host, strconv.Itoa(route.LocalHTTPPort))
 	transport := &http.Transport{}
@@ -826,25 +933,25 @@ func checkIP(route core.PortRoute) (string, error) {
 		localProxyURL := "http://" + localAddr
 		parsedProxyURL, err := url.Parse(localProxyURL)
 		if err != nil {
-			return "", err
+			return publicIPInfo{}, err
 		}
 		transport.Proxy = http.ProxyURL(parsedProxyURL)
 	case core.ProtocolSOCKS5:
 		dialer, err := proxy.SOCKS5("tcp", localAddr, nil, proxy.Direct)
 		if err != nil {
-			return "", err
+			return publicIPInfo{}, err
 		}
 		transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 			return dialer.Dial(network, addr)
 		}
 	default:
-		return "", fmt.Errorf("unsupported local protocol %s", route.LocalProtocol)
+		return publicIPInfo{}, fmt.Errorf("unsupported local protocol %s", route.LocalProtocol)
 	}
 	client := &http.Client{Transport: transport, Timeout: 30 * time.Second}
-	return fetchPublicIP(client)
+	return fetchPublicIPInfo(client)
 }
 
-func checkUpstream(upstream core.UpstreamProxy) (string, error) {
+func checkUpstream(upstream core.UpstreamProxy) (publicIPInfo, error) {
 	transport := &http.Transport{}
 	switch upstream.Protocol {
 	case core.ProtocolHTTP:
@@ -856,16 +963,16 @@ func checkUpstream(upstream core.UpstreamProxy) (string, error) {
 	case core.ProtocolSOCKS5:
 		dialer, err := socks5Dialer(upstream)
 		if err != nil {
-			return "", err
+			return publicIPInfo{}, err
 		}
 		transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 			return dialer.Dial(network, addr)
 		}
 	default:
-		return "", fmt.Errorf("unsupported upstream protocol %s", upstream.Protocol)
+		return publicIPInfo{}, fmt.Errorf("unsupported upstream protocol %s", upstream.Protocol)
 	}
 	client := &http.Client{Transport: transport, Timeout: 30 * time.Second}
-	return fetchPublicIP(client)
+	return fetchPublicIPInfo(client)
 }
 
 func socks5Dialer(upstream core.UpstreamProxy) (proxy.Dialer, error) {
@@ -879,29 +986,33 @@ func socks5Dialer(upstream core.UpstreamProxy) (proxy.Dialer, error) {
 	return proxy.SOCKS5("tcp", upstream.Address(), auth, proxy.Direct)
 }
 
-func fetchPublicIP(client *http.Client) (string, error) {
+func fetchPublicIPInfo(client *http.Client) (publicIPInfo, error) {
 	checkURLs := []string{
+		"http://ip-api.com/json/?fields=status,message,query,country,regionName,city,countryCode",
+		"http://ipinfo.io/json",
 		"http://api.ipify.org?format=json",
 		"http://ipinfo.io/ip",
 		"http://icanhazip.com",
+		"https://ip-api.com/json/?fields=status,message,query,country,regionName,city,countryCode",
+		"https://ipinfo.io/json",
 		"https://api.ipify.org?format=json",
 		"https://ipinfo.io/ip",
 		"https://icanhazip.com",
 	}
 	var errs []string
 	for _, checkURL := range checkURLs {
-		ip, err := fetchPublicIPFrom(client, checkURL)
-		if err == nil && ip != "" {
-			return ip, nil
+		info, err := fetchPublicIPInfoFrom(client, checkURL)
+		if err == nil && info.IP != "" {
+			return info, nil
 		}
 		if err != nil {
 			errs = append(errs, checkURL+": "+err.Error())
 		}
 	}
-	return "", fmt.Errorf("all IP check endpoints failed: %s", strings.Join(errs, " | "))
+	return publicIPInfo{}, fmt.Errorf("all IP check endpoints failed: %s", strings.Join(errs, " | "))
 }
 
-func fetchPublicIPFrom(client *http.Client, checkURL string) (string, error) {
+func fetchPublicIPInfoFrom(client *http.Client, checkURL string) (publicIPInfo, error) {
 	reqClient := *client
 	reqClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
 		return http.ErrUseLastResponse
@@ -913,7 +1024,7 @@ func fetchPublicIPFrom(client *http.Client, checkURL string) (string, error) {
 	for range 5 {
 		resp, err = reqClient.Get(currentURL)
 		if err != nil {
-			return "", err
+			return publicIPInfo{}, err
 		}
 		if resp.StatusCode < 300 || resp.StatusCode >= 400 {
 			break
@@ -921,49 +1032,71 @@ func fetchPublicIPFrom(client *http.Client, checkURL string) (string, error) {
 		location := resp.Header.Get("Location")
 		_ = resp.Body.Close()
 		if location == "" {
-			return "", fmt.Errorf("redirect without Location: %s", resp.Status)
+			return publicIPInfo{}, fmt.Errorf("redirect without Location: %s", resp.Status)
 		}
 		nextURL, err := url.Parse(location)
 		if err != nil {
-			return "", err
+			return publicIPInfo{}, err
 		}
 		if !nextURL.IsAbs() {
 			baseURL, err := url.Parse(currentURL)
 			if err != nil {
-				return "", err
+				return publicIPInfo{}, err
 			}
 			nextURL = baseURL.ResolveReference(nextURL)
 		}
 		currentURL = nextURL.String()
 	}
 	if err != nil {
-		return "", err
+		return publicIPInfo{}, err
 	}
 	defer resp.Body.Close()
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", err
+		return publicIPInfo{}, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("status %s", resp.Status)
+		return publicIPInfo{}, fmt.Errorf("status %s", resp.Status)
 	}
 	text := strings.TrimSpace(string(body))
 	if strings.HasPrefix(text, "{") {
 		var payload struct {
-			IP string `json:"ip"`
+			IP          string `json:"ip"`
+			Query       string `json:"query"`
+			Country     string `json:"country"`
+			CountryCode string `json:"countryCode"`
+			Region      string `json:"region"`
+			RegionName  string `json:"regionName"`
+			City        string `json:"city"`
+			Status      string `json:"status"`
+			Message     string `json:"message"`
 		}
-		if err := json.Unmarshal(body, &payload); err == nil && payload.IP != "" {
-			return payload.IP, nil
+		if err := json.Unmarshal(body, &payload); err == nil {
+			if payload.Status == "fail" {
+				return publicIPInfo{}, fmt.Errorf("%s", payload.Message)
+			}
+			info := publicIPInfo{
+				IP:      firstNonEmpty(payload.IP, payload.Query),
+				Country: firstNonEmpty(payload.Country, payload.CountryCode),
+				Region:  firstNonEmpty(payload.RegionName, payload.Region),
+				City:    payload.City,
+			}
+			if info.IP != "" {
+				if net.ParseIP(info.IP) == nil {
+					return publicIPInfo{}, fmt.Errorf("unexpected ip %q", trimForError(info.IP))
+				}
+				return info, nil
+			}
 		}
 	}
 	fields := strings.Fields(text)
 	if len(fields) == 0 {
-		return "", fmt.Errorf("empty response")
+		return publicIPInfo{}, fmt.Errorf("empty response")
 	}
 	if net.ParseIP(fields[0]) == nil {
-		return "", fmt.Errorf("unexpected response %q", trimForError(text))
+		return publicIPInfo{}, fmt.Errorf("unexpected response %q", trimForError(text))
 	}
-	return fields[0], nil
+	return publicIPInfo{IP: fields[0]}, nil
 }
 
 func trimForError(text string) string {
@@ -972,4 +1105,14 @@ func trimForError(text string) string {
 		return text[:120] + "..."
 	}
 	return text
+}
+
+func firstNonEmpty(values ...string) string {
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }
