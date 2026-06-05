@@ -38,8 +38,10 @@ Windows native build:
 ```
 
 Windows EXE build is also configured in `.github/workflows/windows-build.yml`.
-This is the preferred path when developing on macOS, because the Fyne desktop
-driver uses native graphics dependencies that are best built on Windows.
+This is the preferred path when developing on macOS.
+
+The desktop UI uses native Windows controls through `github.com/lxn/walk`, so it
+does not require OpenGL on the target Windows computer.
 
 ## Current MVP
 
