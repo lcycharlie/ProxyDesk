@@ -38,7 +38,11 @@ func (s *HTTPServer) Start() error {
 		return nil
 	}
 
-	addr := "127.0.0.1:" + strconv.Itoa(s.route.LocalHTTPPort)
+	host := s.route.LocalHost
+	if host == "" {
+		host = "127.0.0.1"
+	}
+	addr := net.JoinHostPort(host, strconv.Itoa(s.route.LocalHTTPPort))
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		return err

@@ -26,6 +26,7 @@ type PortRoute struct {
 	Name           string        `json:"name"`
 	CountryCode    string        `json:"country_code"`
 	CountryName    string        `json:"country_name"`
+	LocalHost      string        `json:"local_host"`
 	LocalHTTPPort  int           `json:"local_http_port"`
 	LocalSocksPort int           `json:"local_socks_port"`
 	Protocol       Protocol      `json:"protocol"`

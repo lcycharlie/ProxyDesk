@@ -38,7 +38,7 @@ func main() {
 
 	var mw *walk.MainWindow
 	var countryCB, protocolCB *walk.ComboBox
-	var portEdit, apiEndpoint, apiCountryParam, apiJSONKey *walk.LineEdit
+	var listenHostEdit, portEdit, apiEndpoint, apiCountryParam, apiJSONKey *walk.LineEdit
 	var upstreamEdit, logBox *walk.TextEdit
 	var statusLabel, exitIPLabel, upstreamLabel, localLabel, errorLabel, upstreamProtocolLabel *walk.Label
 
@@ -84,6 +84,13 @@ func main() {
 	}
 
 	buildRoute := func() (core.PortRoute, error) {
+		listenHost := strings.TrimSpace(listenHostEdit.Text())
+		if listenHost == "" {
+			listenHost = "127.0.0.1"
+		}
+		if listenHost != "0.0.0.0" && net.ParseIP(listenHost) == nil && listenHost != "localhost" {
+			return core.PortRoute{}, fmt.Errorf("监听地址应为 127.0.0.1、本机内网 IP 或 0.0.0.0")
+		}
 		port, err := strconv.Atoi(strings.TrimSpace(portEdit.Text()))
 		if err != nil || port < 1 || port > 65535 {
 			return core.PortRoute{}, fmt.Errorf("端口需要在 1-65535 之间")
@@ -105,6 +112,7 @@ func main() {
 			Name:          countryName + " " + strconv.Itoa(port),
 			CountryCode:   countryCode,
 			CountryName:   countryName,
+			LocalHost:     listenHost,
 			LocalHTTPPort: port,
 			Protocol:      protocol,
 			Upstream:      upstream,
@@ -134,11 +142,14 @@ func main() {
 		_ = statusLabel.SetText("运行中")
 		statusLabel.SetTextColor(walk.RGB(22, 120, 75))
 		updateProtocolLabel()
-		_ = localLabel.SetText("127.0.0.1:" + strconv.Itoa(route.LocalHTTPPort))
+		_ = localLabel.SetText(route.LocalHost + ":" + strconv.Itoa(route.LocalHTTPPort))
 		_ = upstreamLabel.SetText(proxyparse.Format(route.Upstream))
 		_ = errorLabel.SetText("-")
 		appendLog("已启动本地 HTTP 代理 %s -> %s 上游 %s", localLabel.Text(), route.Upstream.Protocol, route.Upstream.Address())
 		appendLog("浏览器/系统代理请配置为 HTTP/HTTPS：%s；不要把本地端口配置成 SOCKS5", localLabel.Text())
+		if route.LocalHost == "0.0.0.0" {
+			appendLog("局域网设备请使用这台 Windows 电脑的内网 IP:%d 作为 HTTP/HTTPS 代理", route.LocalHTTPPort)
+		}
 	}
 
 	stopRoute := func() {
@@ -162,7 +173,7 @@ func main() {
 			walk.MsgBox(mw, "提示", "请先启动本地转发", walk.MsgBoxIconInformation)
 			return
 		}
-		ip, err := checkIP(state.route.LocalHTTPPort)
+		ip, err := checkIP(state.route)
 		if err != nil {
 			_ = errorLabel.SetText(err.Error())
 			appendLog("出口检测失败：%v", err)
@@ -327,12 +338,15 @@ func main() {
 									ComboBox{AssignTo: &countryCB, Model: countries, CurrentIndex: 0, MinSize: Size{Height: 26}},
 									Label{Text: "上游协议", TextColor: walk.RGB(71, 85, 105)},
 									ComboBox{AssignTo: &protocolCB, Model: []string{"HTTP", "SOCKS5"}, CurrentIndex: 0, MinSize: Size{Height: 26}, OnCurrentIndexChanged: updateProtocolLabel},
+									Label{Text: "监听地址", TextColor: walk.RGB(71, 85, 105)},
+									LineEdit{AssignTo: &listenHostEdit, Text: "127.0.0.1", MinSize: Size{Height: 26}},
 									Label{Text: "本地端口", TextColor: walk.RGB(71, 85, 105)},
 									LineEdit{AssignTo: &portEdit, Text: "7890", MinSize: Size{Height: 26}},
 								},
 							},
 							Label{Text: "上游代理", TextColor: walk.RGB(71, 85, 105)},
 							TextEdit{AssignTo: &upstreamEdit, MinSize: Size{Width: 460, Height: 120}},
+							Label{Text: "本机使用 127.0.0.1；局域网共享填 0.0.0.0，其他设备连接这台 Windows 电脑的内网 IP:端口。", TextColor: walk.RGB(100, 116, 139)},
 							Composite{
 								Layout: HBox{MarginsZero: true, Spacing: 8},
 								Children: []Widget{
@@ -448,8 +462,12 @@ func splitCountry(value string) (string, string) {
 	return parts[0], parts[1]
 }
 
-func checkIP(localPort int) (string, error) {
-	localProxyURL := "http://127.0.0.1:" + strconv.Itoa(localPort)
+func checkIP(route core.PortRoute) (string, error) {
+	host := route.LocalHost
+	if host == "" || host == "0.0.0.0" {
+		host = "127.0.0.1"
+	}
+	localProxyURL := "http://" + net.JoinHostPort(host, strconv.Itoa(route.LocalHTTPPort))
 	parsedProxyURL, err := url.Parse(localProxyURL)
 	if err != nil {
 		return "", err
