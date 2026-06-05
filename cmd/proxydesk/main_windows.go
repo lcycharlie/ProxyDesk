@@ -40,7 +40,7 @@ func main() {
 	var countryCB, protocolCB *walk.ComboBox
 	var portEdit, apiEndpoint, apiCountryParam, apiJSONKey *walk.LineEdit
 	var upstreamEdit, logBox *walk.TextEdit
-	var statusLabel, exitIPLabel, upstreamLabel, localLabel, errorLabel *walk.Label
+	var statusLabel, exitIPLabel, upstreamLabel, localLabel, errorLabel, upstreamProtocolLabel *walk.Label
 
 	appendLogDirect := func(format string, args ...any) {
 		if logBox == nil {
@@ -76,6 +76,11 @@ func main() {
 			return core.ProtocolSOCKS5
 		}
 		return core.ProtocolHTTP
+	}
+	updateProtocolLabel := func() {
+		if upstreamProtocolLabel != nil {
+			_ = upstreamProtocolLabel.SetText(string(selectedProtocol()))
+		}
 	}
 
 	buildRoute := func() (core.PortRoute, error) {
@@ -128,10 +133,12 @@ func main() {
 		state.route = route
 		_ = statusLabel.SetText("运行中")
 		statusLabel.SetTextColor(walk.RGB(22, 120, 75))
+		updateProtocolLabel()
 		_ = localLabel.SetText("127.0.0.1:" + strconv.Itoa(route.LocalHTTPPort))
 		_ = upstreamLabel.SetText(proxyparse.Format(route.Upstream))
 		_ = errorLabel.SetText("-")
-		appendLog("已启动 %s -> %s", localLabel.Text(), route.Upstream.Address())
+		appendLog("已启动本地 HTTP 代理 %s -> %s 上游 %s", localLabel.Text(), route.Upstream.Protocol, route.Upstream.Address())
+		appendLog("浏览器/系统代理请配置为 HTTP/HTTPS：%s；不要把本地端口配置成 SOCKS5", localLabel.Text())
 	}
 
 	stopRoute := func() {
@@ -219,7 +226,7 @@ func main() {
 			walk.MsgBox(mw, "系统代理失败", err.Error(), walk.MsgBoxIconError)
 			return
 		}
-		appendLog("已开启 Windows 系统代理：127.0.0.1:%d", port)
+		appendLog("已开启 Windows HTTP/HTTPS 系统代理：127.0.0.1:%d", port)
 	}
 
 	disableSystemProxy := func() {
@@ -296,8 +303,11 @@ func main() {
 							Label{Text: "出口 IP"},
 							Label{AssignTo: &exitIPLabel, Text: "-", TextColor: walk.RGB(30, 64, 175)},
 							VSeparator{},
-							Label{Text: "协议"},
-							Label{Text: "HTTP", TextColor: walk.RGB(30, 64, 175)},
+							Label{Text: "本地协议"},
+							Label{Text: "HTTP/HTTPS", TextColor: walk.RGB(30, 64, 175)},
+							VSeparator{},
+							Label{Text: "上游协议"},
+							Label{AssignTo: &upstreamProtocolLabel, Text: "HTTP", TextColor: walk.RGB(30, 64, 175)},
 						},
 					},
 				},
@@ -316,7 +326,7 @@ func main() {
 									Label{Text: "国家/地区", TextColor: walk.RGB(71, 85, 105)},
 									ComboBox{AssignTo: &countryCB, Model: countries, CurrentIndex: 0, MinSize: Size{Height: 26}},
 									Label{Text: "上游协议", TextColor: walk.RGB(71, 85, 105)},
-									ComboBox{AssignTo: &protocolCB, Model: []string{"HTTP", "SOCKS5"}, CurrentIndex: 0, MinSize: Size{Height: 26}},
+									ComboBox{AssignTo: &protocolCB, Model: []string{"HTTP", "SOCKS5"}, CurrentIndex: 0, MinSize: Size{Height: 26}, OnCurrentIndexChanged: updateProtocolLabel},
 									Label{Text: "本地端口", TextColor: walk.RGB(71, 85, 105)},
 									LineEdit{AssignTo: &portEdit, Text: "7890", MinSize: Size{Height: 26}},
 								},
@@ -488,7 +498,26 @@ func socks5Dialer(upstream core.UpstreamProxy) (proxy.Dialer, error) {
 }
 
 func fetchPublicIP(client *http.Client) (string, error) {
-	resp, err := client.Get("https://api.ipify.org?format=json")
+	checkURLs := []string{
+		"https://ipinfo.io/ip",
+		"https://icanhazip.com",
+		"https://api.ipify.org?format=json",
+	}
+	var errs []string
+	for _, checkURL := range checkURLs {
+		ip, err := fetchPublicIPFrom(client, checkURL)
+		if err == nil && ip != "" {
+			return ip, nil
+		}
+		if err != nil {
+			errs = append(errs, checkURL+": "+err.Error())
+		}
+	}
+	return "", fmt.Errorf("all IP check endpoints failed: %s", strings.Join(errs, " | "))
+}
+
+func fetchPublicIPFrom(client *http.Client, checkURL string) (string, error) {
+	resp, err := client.Get(checkURL)
 	if err != nil {
 		return "", err
 	}
@@ -498,16 +527,31 @@ func fetchPublicIP(client *http.Client) (string, error) {
 		return "", err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("ip check status: %s", resp.Status)
+		return "", fmt.Errorf("status %s", resp.Status)
 	}
-	var payload struct {
-		IP string `json:"ip"`
+	text := strings.TrimSpace(string(body))
+	if strings.HasPrefix(text, "{") {
+		var payload struct {
+			IP string `json:"ip"`
+		}
+		if err := json.Unmarshal(body, &payload); err == nil && payload.IP != "" {
+			return payload.IP, nil
+		}
 	}
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return strings.TrimSpace(string(body)), nil
+	fields := strings.Fields(text)
+	if len(fields) == 0 {
+		return "", fmt.Errorf("empty response")
 	}
-	if payload.IP == "" {
-		return strings.TrimSpace(string(body)), nil
+	if net.ParseIP(fields[0]) == nil {
+		return "", fmt.Errorf("unexpected response %q", trimForError(text))
 	}
-	return payload.IP, nil
+	return fields[0], nil
+}
+
+func trimForError(text string) string {
+	text = strings.TrimSpace(text)
+	if len(text) > 120 {
+		return text[:120] + "..."
+	}
+	return text
 }
