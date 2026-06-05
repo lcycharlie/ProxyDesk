@@ -76,7 +76,7 @@ func main() {
 
 	var mw *walk.MainWindow
 	var countryCB, localProtocolCB, protocolCB, portCB *walk.ComboBox
-	var listenHostEdit, apiEndpoint, apiCountryParam, apiJSONKey *walk.LineEdit
+	var listenHostEdit, portStartEdit, portEndEdit, apiEndpoint, apiCountryParam, apiJSONKey *walk.LineEdit
 	var upstreamEdit, logBox *walk.TextEdit
 	var routeList *walk.ListBox
 	var contentTitle *walk.Label
@@ -127,7 +127,39 @@ func main() {
 		}
 		return core.ProtocolHTTP
 	}
+	currentPortRange := func() (int, int) {
+		start := 10000
+		end := 10099
+		if portStartEdit != nil {
+			if value, err := strconv.Atoi(strings.TrimSpace(portStartEdit.Text())); err == nil {
+				start = value
+			}
+		}
+		if portEndEdit != nil {
+			if value, err := strconv.Atoi(strings.TrimSpace(portEndEdit.Text())); err == nil {
+				end = value
+			}
+		}
+		return start, end
+	}
+	validatePortRange := func() (int, int, error) {
+		start, end := currentPortRange()
+		if start < 1 || start > 65535 || end < 1 || end > 65535 {
+			return 0, 0, fmt.Errorf("端口范围需要在 1-65535 之间")
+		}
+		if start > end {
+			return 0, 0, fmt.Errorf("端口起始不能大于端口结束")
+		}
+		if end-start > 2000 {
+			return 0, 0, fmt.Errorf("端口范围过大，请控制在 2000 个以内")
+		}
+		return start, end, nil
+	}
 	portOptions := func(keepPort int) []string {
+		start, end := currentPortRange()
+		if start > end {
+			return []string{}
+		}
 		used := map[int]bool{}
 		for _, rt := range state.routes {
 			if rt.route.LocalHTTPPort != keepPort {
@@ -135,7 +167,7 @@ func main() {
 			}
 		}
 		options := []string{}
-		for port := 10000; port <= 10999; port++ {
+		for port := start; port <= end; port++ {
 			if !used[port] {
 				options = append(options, strconv.Itoa(port))
 			}
@@ -154,7 +186,9 @@ func main() {
 		}
 		if len(options) > 0 {
 			_ = portCB.SetCurrentIndex(0)
+			return
 		}
+		_ = portCB.SetText("")
 	}
 	updateRunningProtocolLabels := func(route core.PortRoute) {
 		if localProtocolLabel != nil {
@@ -177,6 +211,10 @@ func main() {
 		}
 		_ = statusLabel.SetText("配置已变更，需重启")
 		statusLabel.SetTextColor(walk.RGB(185, 100, 0))
+	}
+	portRangeChanged := func() {
+		refreshPortOptions(0)
+		markConfigChanged()
 	}
 	routeDisplay := func(rt routeRuntime) string {
 		status := "未启动"
@@ -298,9 +336,16 @@ func main() {
 		if listenHost != "0.0.0.0" && net.ParseIP(listenHost) == nil && listenHost != "localhost" {
 			return core.PortRoute{}, fmt.Errorf("监听地址应为 127.0.0.1、本机内网 IP 或 0.0.0.0")
 		}
+		startPort, endPort, err := validatePortRange()
+		if err != nil {
+			return core.PortRoute{}, err
+		}
+		if strings.TrimSpace(portCB.Text()) == "" {
+			return core.PortRoute{}, fmt.Errorf("当前端口范围内没有可用端口，请扩大范围或删除转发列表中的配置")
+		}
 		port, err := strconv.Atoi(strings.TrimSpace(portCB.Text()))
-		if err != nil || port < 10000 || port > 10999 {
-			return core.PortRoute{}, fmt.Errorf("端口需要在 10000-10999 之间")
+		if err != nil || port < startPort || port > endPort {
+			return core.PortRoute{}, fmt.Errorf("端口需要在 %d-%d 之间", startPort, endPort)
 		}
 		for _, rt := range state.routes {
 			if rt.route.LocalHTTPPort == port {
@@ -759,6 +804,10 @@ func main() {
 													ComboBox{AssignTo: &protocolCB, Model: []string{"HTTP", "SOCKS5"}, CurrentIndex: 0, MinSize: Size{Height: 26}, OnCurrentIndexChanged: markConfigChanged},
 													Label{Text: "监听地址", TextColor: walk.RGB(71, 85, 105)},
 													LineEdit{AssignTo: &listenHostEdit, Text: detectedLANIP, MinSize: Size{Height: 26}, OnTextChanged: markConfigChanged},
+													Label{Text: "端口起始", TextColor: walk.RGB(71, 85, 105)},
+													LineEdit{AssignTo: &portStartEdit, Text: "10000", MinSize: Size{Height: 26}, OnTextChanged: portRangeChanged},
+													Label{Text: "端口结束", TextColor: walk.RGB(71, 85, 105)},
+													LineEdit{AssignTo: &portEndEdit, Text: "10099", MinSize: Size{Height: 26}, OnTextChanged: portRangeChanged},
 													Label{Text: "本地端口", TextColor: walk.RGB(71, 85, 105)},
 													ComboBox{AssignTo: &portCB, Model: portOptions(0), CurrentIndex: 0, MinSize: Size{Height: 26}, OnCurrentIndexChanged: markConfigChanged},
 												},
