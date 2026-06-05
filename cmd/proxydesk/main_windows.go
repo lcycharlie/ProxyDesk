@@ -86,17 +86,24 @@ func main() {
 		}
 		return core.ProtocolHTTP
 	}
-	updateProtocolLabels := func() {
+	updateRunningProtocolLabels := func(route core.PortRoute) {
 		if localProtocolLabel != nil {
-			if selectedLocalProtocol() == core.ProtocolSOCKS5 {
+			if route.LocalProtocol == core.ProtocolSOCKS5 {
 				_ = localProtocolLabel.SetText("SOCKS5")
 			} else {
 				_ = localProtocolLabel.SetText("HTTP/HTTPS")
 			}
 		}
 		if upstreamProtocolLabel != nil {
-			_ = upstreamProtocolLabel.SetText(string(selectedUpstreamProtocol()))
+			_ = upstreamProtocolLabel.SetText(string(route.Protocol))
 		}
+	}
+	markConfigChanged := func() {
+		if state.server == nil || statusLabel == nil {
+			return
+		}
+		_ = statusLabel.SetText("配置已变更，需重启")
+		statusLabel.SetTextColor(walk.RGB(185, 100, 0))
 	}
 
 	buildRoute := func() (core.PortRoute, error) {
@@ -174,7 +181,7 @@ func main() {
 		state.route = route
 		_ = statusLabel.SetText("运行中")
 		statusLabel.SetTextColor(walk.RGB(22, 120, 75))
-		updateProtocolLabels()
+		updateRunningProtocolLabels(route)
 		_ = localLabel.SetText(route.LocalHost + ":" + strconv.Itoa(route.LocalHTTPPort))
 		_ = upstreamLabel.SetText(proxyparse.Format(route.Upstream))
 		_ = errorLabel.SetText("-")
@@ -347,10 +354,10 @@ func main() {
 							Label{Text: "出口 IP"},
 							Label{AssignTo: &exitIPLabel, Text: "-", TextColor: walk.RGB(30, 64, 175)},
 							VSeparator{},
-							Label{Text: "本地协议"},
+							Label{Text: "运行本地协议"},
 							Label{AssignTo: &localProtocolLabel, Text: "HTTP/HTTPS", TextColor: walk.RGB(30, 64, 175)},
 							VSeparator{},
-							Label{Text: "上游协议"},
+							Label{Text: "运行上游协议"},
 							Label{AssignTo: &upstreamProtocolLabel, Text: "HTTP", TextColor: walk.RGB(30, 64, 175)},
 						},
 					},
@@ -370,17 +377,17 @@ func main() {
 									Label{Text: "国家/地区", TextColor: walk.RGB(71, 85, 105)},
 									ComboBox{AssignTo: &countryCB, Model: countries, CurrentIndex: 0, MinSize: Size{Height: 26}},
 									Label{Text: "本地协议", TextColor: walk.RGB(71, 85, 105)},
-									ComboBox{AssignTo: &localProtocolCB, Model: []string{"HTTP/HTTPS", "SOCKS5"}, CurrentIndex: 0, MinSize: Size{Height: 26}, OnCurrentIndexChanged: updateProtocolLabels},
+									ComboBox{AssignTo: &localProtocolCB, Model: []string{"HTTP/HTTPS", "SOCKS5"}, CurrentIndex: 0, MinSize: Size{Height: 26}, OnCurrentIndexChanged: markConfigChanged},
 									Label{Text: "上游协议", TextColor: walk.RGB(71, 85, 105)},
-									ComboBox{AssignTo: &protocolCB, Model: []string{"HTTP", "SOCKS5"}, CurrentIndex: 0, MinSize: Size{Height: 26}, OnCurrentIndexChanged: updateProtocolLabels},
+									ComboBox{AssignTo: &protocolCB, Model: []string{"HTTP", "SOCKS5"}, CurrentIndex: 0, MinSize: Size{Height: 26}, OnCurrentIndexChanged: markConfigChanged},
 									Label{Text: "监听地址", TextColor: walk.RGB(71, 85, 105)},
-									LineEdit{AssignTo: &listenHostEdit, Text: detectedLANIP, MinSize: Size{Height: 26}},
+									LineEdit{AssignTo: &listenHostEdit, Text: detectedLANIP, MinSize: Size{Height: 26}, OnTextChanged: markConfigChanged},
 									Label{Text: "本地端口", TextColor: walk.RGB(71, 85, 105)},
-									LineEdit{AssignTo: &portEdit, Text: "7890", MinSize: Size{Height: 26}},
+									LineEdit{AssignTo: &portEdit, Text: "7890", MinSize: Size{Height: 26}, OnTextChanged: markConfigChanged},
 								},
 							},
 							Label{Text: "上游代理", TextColor: walk.RGB(71, 85, 105)},
-							TextEdit{AssignTo: &upstreamEdit, MinSize: Size{Width: 460, Height: 120}},
+							TextEdit{AssignTo: &upstreamEdit, MinSize: Size{Width: 460, Height: 120}, OnTextChanged: markConfigChanged},
 							Label{Text: "其他设备按本地协议连接内网 IP:端口；要给工具用 SOCKS5，请把本地协议选 SOCKS5。", TextColor: walk.RGB(100, 116, 139)},
 							Composite{
 								Layout: HBox{MarginsZero: true, Spacing: 8},
