@@ -44,10 +44,11 @@ func (r routeRuntime) running() bool {
 }
 
 type publicIPInfo struct {
-	IP      string
-	Country string
-	Region  string
-	City    string
+	IP          string
+	Country     string
+	CountryCode string
+	Region      string
+	City        string
 }
 
 func (i publicIPInfo) Display() string {
@@ -81,10 +82,10 @@ func main() {
 	var upstreamEdit, logBox *walk.TextEdit
 	var routeList *walk.ListBox
 	var contentTitle *walk.Label
-	var dashboardPage, configPage, routePage, apiPage, logPage *walk.Composite
+	var dashboardPage, configPage, routePage, settingsPage *walk.Composite
 	var statusLabel, exitIPLabel, upstreamLabel, errorLabel, localProtocolLabel, upstreamProtocolLabel *walk.Label
 	var envExitLabel, localIPLabel *walk.Label
-	var configCountryLabel, actualExitLabel *walk.Label
+	var actualExitLabel *walk.Label
 	loadingRoute := false
 
 	appendLogDirect := func(format string, args ...any) {
@@ -148,16 +149,6 @@ func main() {
 			return
 		}
 		_ = countryCB.SetText("")
-	}
-	selectCountryCode := func(code string) {
-		if countrySearchEdit != nil {
-			_ = countrySearchEdit.SetText("")
-		}
-		filteredCountries = append([]string{}, countries...)
-		if countryCB != nil {
-			_ = countryCB.SetModel(filteredCountries)
-			_ = countryCB.SetCurrentIndex(defaultCountryIndex(filteredCountries, code))
-		}
 	}
 	selectedLocalProtocol := func() core.Protocol {
 		if localProtocolCB.CurrentIndex() == 1 {
@@ -274,18 +265,13 @@ func main() {
 				City:    rt.route.LastExitCity,
 			}.Display()
 		}
-		configCountry := strings.TrimSpace(rt.route.CountryCode)
-		if configCountry == "" {
-			configCountry = "-"
-		}
-		return fmt.Sprintf("[%s] %s:%d  本地:%s  上游:%s %s  配置:%s  实际出口:%s",
+		return fmt.Sprintf("[%s] %s:%d  本地:%s  上游:%s %s  实际出口:%s",
 			status,
 			rt.route.LocalHost,
 			rt.route.LocalHTTPPort,
 			rt.route.LocalProtocol,
 			rt.route.Upstream.Protocol,
 			rt.route.Upstream.Address(),
-			configCountry,
 			exit,
 		)
 	}
@@ -330,13 +316,6 @@ func main() {
 		if actualExitLabel != nil {
 			_ = actualExitLabel.SetText(exitDisplay)
 		}
-		if configCountryLabel != nil {
-			configCountry := strings.TrimSpace(route.CountryCode + " " + route.CountryName)
-			if configCountry == "" {
-				configCountry = "-"
-			}
-			_ = configCountryLabel.SetText(configCountry)
-		}
 		_ = errorLabel.SetText("-")
 	}
 	loadSelectedRoute := func() {
@@ -355,9 +334,6 @@ func main() {
 		route := state.routes[idx].route
 		_ = listenHostEdit.SetText(route.LocalHost)
 		refreshPortOptions(route.LocalHTTPPort)
-		if route.CountryCode != "" {
-			selectCountryCode(route.CountryCode)
-		}
 		if route.LocalProtocol == core.ProtocolSOCKS5 {
 			_ = localProtocolCB.SetCurrentIndex(1)
 		} else {
@@ -408,12 +384,11 @@ func main() {
 			return core.PortRoute{}, err
 		}
 
-		countryCode, countryName := splitCountry(selectedCountry())
 		return core.PortRoute{
-			ID:            countryCode + "-" + strconv.Itoa(port),
-			Name:          countryName + " " + strconv.Itoa(port),
-			CountryCode:   countryCode,
-			CountryName:   countryName,
+			ID:            "route-" + strconv.Itoa(port),
+			Name:          "Port " + strconv.Itoa(port),
+			CountryCode:   "",
+			CountryName:   "",
 			LocalHost:     listenHost,
 			LocalHTTPPort: port,
 			LocalProtocol: localProtocol,
@@ -620,10 +595,10 @@ func main() {
 			_ = logBox.SetText("")
 		}
 	}
-	pageNames := []string{"工作台", "线路配置", "转发列表", "供应商 API", "运行日志"}
+	pageNames := []string{"工作台", "线路配置", "转发列表", "设置"}
 	openPage := func(index int) func() {
 		return func() {
-			pages := []*walk.Composite{dashboardPage, configPage, routePage, apiPage, logPage}
+			pages := []*walk.Composite{dashboardPage, configPage, routePage, settingsPage}
 			if index < 0 || index >= len(pages) {
 				return
 			}
@@ -707,12 +682,10 @@ func main() {
 										Children: []Widget{
 											Label{Text: "当前环境出口", TextColor: walk.RGB(15, 94, 91)},
 											HSpacer{},
-											Label{
-												Text:      "↻",
-												Font:      Font{Family: "Microsoft YaHei UI", PointSize: 12, Bold: true},
-												TextColor: walk.RGB(14, 116, 101),
-												MinSize:   Size{Width: 20, Height: 20},
-												OnMouseDown: func(x, y int, button walk.MouseButton) {
+											LinkLabel{
+												Text:    `<a id="refresh">↻</a>`,
+												MinSize: Size{Width: 20, Height: 20},
+												OnLinkActivated: func(link *walk.LinkLabelLink) {
 													refreshEnvironmentExit()
 												},
 											},
@@ -779,8 +752,7 @@ func main() {
 							PushButton{Text: "概览", MinSize: Size{Height: 34}, Background: SolidColorBrush{Color: walk.RGB(35, 180, 150)}, OnClicked: openPage(0)},
 							PushButton{Text: "线路配置", MinSize: Size{Height: 34}, OnClicked: openPage(1)},
 							PushButton{Text: "转发列表", MinSize: Size{Height: 34}, OnClicked: openPage(2)},
-							PushButton{Text: "供应商 API", MinSize: Size{Height: 34}, OnClicked: openPage(3)},
-							PushButton{Text: "运行日志", MinSize: Size{Height: 34}, OnClicked: openPage(4)},
+							PushButton{Text: "设置", MinSize: Size{Height: 34}, OnClicked: openPage(3)},
 							VSpacer{},
 							Label{Text: "实际国家看出口检测", TextColor: walk.RGB(148, 163, 184)},
 						},
@@ -804,8 +776,6 @@ func main() {
 											Composite{
 												Layout: Grid{Columns: 2, MarginsZero: true, Spacing: 8},
 												Children: []Widget{
-													Label{Text: "配置国家/地区", TextColor: walk.RGB(71, 85, 105)},
-													Label{AssignTo: &configCountryLabel, Text: "-", TextColor: walk.RGB(15, 118, 110), EllipsisMode: EllipsisEnd},
 													Label{Text: "实际出口", TextColor: walk.RGB(71, 85, 105)},
 													Label{AssignTo: &actualExitLabel, Text: "-", TextColor: walk.RGB(15, 118, 110), EllipsisMode: EllipsisEnd},
 													Label{Text: "上游代理", TextColor: walk.RGB(71, 85, 105)},
@@ -851,27 +821,19 @@ func main() {
 											Composite{
 												Layout: Grid{Columns: 2, MarginsZero: true, Spacing: 8},
 												Children: []Widget{
-													Label{Text: "国家搜索", TextColor: walk.RGB(71, 85, 105)},
-													LineEdit{AssignTo: &countrySearchEdit, MinSize: Size{Height: 26}, OnTextChanged: refreshCountryOptions},
-													Label{Text: "配置国家/地区", TextColor: walk.RGB(71, 85, 105)},
-													ComboBox{AssignTo: &countryCB, Model: filteredCountries, CurrentIndex: defaultCountry, MinSize: Size{Height: 26}},
 													Label{Text: "本地协议", TextColor: walk.RGB(71, 85, 105)},
 													ComboBox{AssignTo: &localProtocolCB, Model: []string{"HTTP/HTTPS", "SOCKS5"}, CurrentIndex: 0, MinSize: Size{Height: 26}, OnCurrentIndexChanged: markConfigChanged},
 													Label{Text: "上游协议", TextColor: walk.RGB(71, 85, 105)},
 													ComboBox{AssignTo: &protocolCB, Model: []string{"HTTP", "SOCKS5"}, CurrentIndex: 0, MinSize: Size{Height: 26}, OnCurrentIndexChanged: markConfigChanged},
 													Label{Text: "监听地址", TextColor: walk.RGB(71, 85, 105)},
-													LineEdit{AssignTo: &listenHostEdit, Text: detectedLANIP, MinSize: Size{Height: 26}, OnTextChanged: markConfigChanged},
-													Label{Text: "端口起始", TextColor: walk.RGB(71, 85, 105)},
-													LineEdit{AssignTo: &portStartEdit, Text: "10000", MinSize: Size{Height: 26}, OnTextChanged: portRangeChanged},
-													Label{Text: "端口结束", TextColor: walk.RGB(71, 85, 105)},
-													LineEdit{AssignTo: &portEndEdit, Text: "10099", MinSize: Size{Height: 26}, OnTextChanged: portRangeChanged},
+													LineEdit{AssignTo: &listenHostEdit, Text: detectedLANIP, ReadOnly: true, MinSize: Size{Height: 26}},
 													Label{Text: "本地端口", TextColor: walk.RGB(71, 85, 105)},
 													ComboBox{AssignTo: &portCB, Model: portOptions(0), CurrentIndex: 0, MinSize: Size{Height: 26}, OnCurrentIndexChanged: markConfigChanged},
 												},
 											},
 											Label{Text: "上游代理", TextColor: walk.RGB(71, 85, 105)},
 											TextEdit{AssignTo: &upstreamEdit, MinSize: Size{Height: 170}, OnTextChanged: markConfigChanged},
-											Label{Text: "配置国家用于供应商 API 或线路标记；实际国家/地区以“测试出口”检测结果为准。", TextColor: walk.RGB(100, 116, 139)},
+											Label{Text: "监听地址固定为本机内网 IP；端口范围可在设置中调整。", TextColor: walk.RGB(100, 116, 139)},
 											Composite{
 												Layout: HBox{MarginsZero: true, Spacing: 8},
 												Children: []Widget{
@@ -916,10 +878,27 @@ func main() {
 								},
 							},
 							Composite{
-								AssignTo: &apiPage,
+								AssignTo: &settingsPage,
 								Visible:  false,
 								Layout:   VBox{Margins: Margins{Left: 12, Top: 12, Right: 12, Bottom: 12}, Spacing: 10},
 								Children: []Widget{
+									GroupBox{
+										Title:      "端口范围",
+										Layout:     VBox{Margins: Margins{Left: 14, Top: 12, Right: 14, Bottom: 12}, Spacing: 10},
+										Background: SolidColorBrush{Color: walk.RGB(250, 255, 253)},
+										Children: []Widget{
+											Composite{
+												Layout: Grid{Columns: 2, MarginsZero: true, Spacing: 8},
+												Children: []Widget{
+													Label{Text: "端口起始", TextColor: walk.RGB(71, 85, 105)},
+													LineEdit{AssignTo: &portStartEdit, Text: "10000", MinSize: Size{Height: 26}, OnTextChanged: portRangeChanged},
+													Label{Text: "端口结束", TextColor: walk.RGB(71, 85, 105)},
+													LineEdit{AssignTo: &portEndEdit, Text: "10099", MinSize: Size{Height: 26}, OnTextChanged: portRangeChanged},
+												},
+											},
+											Label{Text: "本地端口下拉会按这个范围生成，并自动排除转发列表里已占用的端口。", TextColor: walk.RGB(100, 116, 139)},
+										},
+									},
 									GroupBox{
 										Title:      "供应商 API",
 										Layout:     VBox{Margins: Margins{Left: 14, Top: 12, Right: 14, Bottom: 12}, Spacing: 10},
@@ -928,6 +907,10 @@ func main() {
 											Composite{
 												Layout: Grid{Columns: 2, MarginsZero: true, Spacing: 8},
 												Children: []Widget{
+													Label{Text: "国家搜索"},
+													LineEdit{AssignTo: &countrySearchEdit, MinSize: Size{Height: 26}, OnTextChanged: refreshCountryOptions},
+													Label{Text: "国家/地区"},
+													ComboBox{AssignTo: &countryCB, Model: filteredCountries, CurrentIndex: defaultCountry, MinSize: Size{Height: 26}},
 													Label{Text: "API 地址"},
 													LineEdit{AssignTo: &apiEndpoint, MinSize: Size{Height: 26}},
 													Label{Text: "国家参数"},
@@ -936,7 +919,6 @@ func main() {
 													LineEdit{AssignTo: &apiJSONKey, MinSize: Size{Height: 26}},
 												},
 											},
-											Label{Text: "如果供应商支持国家参数，这里会按上方“配置国家/地区”请求；实际出口仍建议测试确认。", TextColor: walk.RGB(100, 116, 139)},
 											Composite{
 												Layout: HBox{MarginsZero: true},
 												Children: []Widget{
@@ -946,28 +928,28 @@ func main() {
 											},
 										},
 									},
-								},
-							},
-							Composite{
-								AssignTo: &logPage,
-								Visible:  false,
-								Layout:   VBox{Margins: Margins{Left: 12, Top: 12, Right: 12, Bottom: 12}, Spacing: 8},
-								Children: []Widget{
-									Composite{
-										Layout: HBox{MarginsZero: true},
+									GroupBox{
+										Title:      "运行日志",
+										Layout:     VBox{Margins: Margins{Left: 14, Top: 12, Right: 14, Bottom: 12}, Spacing: 8},
+										Background: SolidColorBrush{Color: walk.RGB(250, 255, 253)},
 										Children: []Widget{
-											Label{Text: "运行日志会自动滚动到底部，可手动滑动查看历史。", TextColor: walk.RGB(37, 99, 105)},
-											HSpacer{},
-											PushButton{Text: "清理日志", MinSize: Size{Width: 100, Height: 28}, OnClicked: clearLogs},
+											Composite{
+												Layout: HBox{MarginsZero: true},
+												Children: []Widget{
+													Label{Text: "运行日志会自动滚动到底部，可手动滑动查看历史。", TextColor: walk.RGB(37, 99, 105)},
+													HSpacer{},
+													PushButton{Text: "清理日志", MinSize: Size{Width: 100, Height: 28}, OnClicked: clearLogs},
+												},
+											},
+											TextEdit{
+												AssignTo: &logBox,
+												ReadOnly: true,
+												MinSize:  Size{Height: 210},
+												Font:     Font{Family: "Consolas", PointSize: 9},
+												VScroll:  true,
+												HScroll:  true,
+											},
 										},
-									},
-									TextEdit{
-										AssignTo: &logBox,
-										ReadOnly: true,
-										MinSize:  Size{Height: 430},
-										Font:     Font{Family: "Consolas", PointSize: 9},
-										VScroll:  true,
-										HScroll:  true,
 									},
 								},
 							},
@@ -1038,15 +1020,21 @@ func filterCountries(countries []string, query string) []string {
 
 func environmentCountryDisplay(info publicIPInfo) string {
 	ip := strings.TrimSpace(info.IP)
-	country := strings.TrimSpace(info.Country)
-	if ip != "" && country != "" {
-		return ip + " " + country
+	countryCode := strings.TrimSpace(info.CountryCode)
+	if countryCode == "" {
+		country := strings.TrimSpace(info.Country)
+		if len(country) == 2 {
+			countryCode = strings.ToUpper(country)
+		}
+	}
+	if ip != "" && countryCode != "" {
+		return ip + " " + strings.ToUpper(countryCode)
 	}
 	if ip != "" {
 		return ip
 	}
-	if country != "" {
-		return country
+	if countryCode != "" {
+		return strings.ToUpper(countryCode)
 	}
 	return "-"
 }
@@ -1514,10 +1502,11 @@ func fetchPublicIPInfoFrom(client *http.Client, checkURL string) (publicIPInfo, 
 				return publicIPInfo{}, fmt.Errorf("%s", payload.Message)
 			}
 			info := publicIPInfo{
-				IP:      firstNonEmpty(payload.IP, payload.Query),
-				Country: firstNonEmpty(payload.Country, payload.CountryCode),
-				Region:  firstNonEmpty(payload.RegionName, payload.Region),
-				City:    payload.City,
+				IP:          firstNonEmpty(payload.IP, payload.Query),
+				Country:     payload.Country,
+				CountryCode: payload.CountryCode,
+				Region:      firstNonEmpty(payload.RegionName, payload.Region),
+				City:        payload.City,
 			}
 			if info.IP != "" {
 				if net.ParseIP(info.IP) == nil {
