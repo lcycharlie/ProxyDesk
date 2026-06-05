@@ -28,14 +28,24 @@ import (
 )
 
 type runtimeState struct {
+	routes   []routeRuntime
+	selected int
+}
+
+type routeRuntime struct {
+	route  core.PortRoute
 	server interface {
 		Stop(context.Context) error
 	}
-	route core.PortRoute
+}
+
+func (r routeRuntime) running() bool {
+	return r.server != nil
 }
 
 func main() {
 	state := &runtimeState{}
+	state.selected = -1
 	countries := []string{"US - United States", "JP - Japan", "GB - United Kingdom", "DE - Germany", "SG - Singapore", "BR - Brazil", "IN - India"}
 	detectedLANIP := detectLANIP()
 
@@ -43,7 +53,9 @@ func main() {
 	var countryCB, localProtocolCB, protocolCB *walk.ComboBox
 	var listenHostEdit, portEdit, apiEndpoint, apiCountryParam, apiJSONKey *walk.LineEdit
 	var upstreamEdit, logBox *walk.TextEdit
+	var routeList *walk.ListBox
 	var statusLabel, exitIPLabel, upstreamLabel, localLabel, errorLabel, localProtocolLabel, upstreamProtocolLabel *walk.Label
+	loadingRoute := false
 
 	appendLogDirect := func(format string, args ...any) {
 		if logBox == nil {
@@ -99,11 +111,88 @@ func main() {
 		}
 	}
 	markConfigChanged := func() {
-		if state.server == nil || statusLabel == nil {
+		if loadingRoute {
+			return
+		}
+		if state.selected < 0 || state.selected >= len(state.routes) || !state.routes[state.selected].running() || statusLabel == nil {
 			return
 		}
 		_ = statusLabel.SetText("配置已变更，需重启")
 		statusLabel.SetTextColor(walk.RGB(185, 100, 0))
+	}
+	routeDisplay := func(rt routeRuntime) string {
+		status := "未启动"
+		if rt.running() {
+			status = "运行中"
+		}
+		return fmt.Sprintf("[%s] %s:%d  本地:%s  上游:%s %s",
+			status,
+			rt.route.LocalHost,
+			rt.route.LocalHTTPPort,
+			rt.route.LocalProtocol,
+			rt.route.Upstream.Protocol,
+			rt.route.Upstream.Address(),
+		)
+	}
+	refreshRouteList := func() {
+		if routeList == nil {
+			return
+		}
+		items := make([]string, len(state.routes))
+		for i, rt := range state.routes {
+			items[i] = routeDisplay(rt)
+		}
+		_ = routeList.SetModel(items)
+		if len(items) == 0 {
+			state.selected = -1
+			return
+		}
+		if state.selected < 0 || state.selected >= len(items) {
+			state.selected = 0
+		}
+		_ = routeList.SetCurrentIndex(state.selected)
+	}
+	showRoute := func(route core.PortRoute, running bool) {
+		if running {
+			_ = statusLabel.SetText("运行中")
+			statusLabel.SetTextColor(walk.RGB(22, 120, 75))
+		} else {
+			_ = statusLabel.SetText("未启动")
+			statusLabel.SetTextColor(walk.RGB(123, 94, 0))
+		}
+		updateRunningProtocolLabels(route)
+		_ = localLabel.SetText(route.LocalHost + ":" + strconv.Itoa(route.LocalHTTPPort))
+		_ = upstreamLabel.SetText(proxyparse.Format(route.Upstream))
+		_ = errorLabel.SetText("-")
+	}
+	loadSelectedRoute := func() {
+		if routeList == nil {
+			return
+		}
+		idx := routeList.CurrentIndex()
+		if idx < 0 || idx >= len(state.routes) {
+			return
+		}
+		loadingRoute = true
+		defer func() {
+			loadingRoute = false
+		}()
+		state.selected = idx
+		route := state.routes[idx].route
+		_ = listenHostEdit.SetText(route.LocalHost)
+		_ = portEdit.SetText(strconv.Itoa(route.LocalHTTPPort))
+		if route.LocalProtocol == core.ProtocolSOCKS5 {
+			_ = localProtocolCB.SetCurrentIndex(1)
+		} else {
+			_ = localProtocolCB.SetCurrentIndex(0)
+		}
+		if route.Protocol == core.ProtocolSOCKS5 {
+			_ = protocolCB.SetCurrentIndex(1)
+		} else {
+			_ = protocolCB.SetCurrentIndex(0)
+		}
+		_ = upstreamEdit.SetText(proxyparse.Format(route.Upstream))
+		showRoute(route, state.routes[idx].running())
 	}
 
 	buildRoute := func() (core.PortRoute, error) {
@@ -146,30 +235,81 @@ func main() {
 		}, nil
 	}
 
-	startRoute := func() {
-		route, err := buildRoute()
-		if err != nil {
-			walk.MsgBox(mw, "启动失败", err.Error(), walk.MsgBoxIconError)
-			return
-		}
-		if state.server != nil {
-			_ = state.server.Stop(context.Background())
-		}
-		var server interface {
-			Start() error
-			Stop(context.Context) error
-		}
+	newServer := func(route core.PortRoute) (interface {
+		Start() error
+		Stop(context.Context) error
+	}, error) {
 		switch route.LocalProtocol {
 		case core.ProtocolHTTP:
 			httpServer := localproxy.NewHTTPServer(route)
 			httpServer.OnLog = appendLog
-			server = httpServer
+			return httpServer, nil
 		case core.ProtocolSOCKS5:
 			socksServer := localproxy.NewSOCKS5Server(route)
 			socksServer.OnLog = appendLog
-			server = socksServer
+			return socksServer, nil
 		default:
-			walk.MsgBox(mw, "启动失败", "不支持的本地协议："+string(route.LocalProtocol), walk.MsgBoxIconError)
+			return nil, fmt.Errorf("不支持的本地协议：%s", route.LocalProtocol)
+		}
+	}
+	addRoute := func() {
+		route, err := buildRoute()
+		if err != nil {
+			walk.MsgBox(mw, "配置无效", err.Error(), walk.MsgBoxIconError)
+			return
+		}
+		state.routes = append(state.routes, routeRuntime{route: route})
+		state.selected = len(state.routes) - 1
+		appendLog("已新增转发配置：%s:%d", route.LocalHost, route.LocalHTTPPort)
+		refreshRouteList()
+		showRoute(route, false)
+	}
+	updateRoute := func() {
+		idx := state.selected
+		if routeList != nil && routeList.CurrentIndex() >= 0 {
+			idx = routeList.CurrentIndex()
+		}
+		if idx < 0 || idx >= len(state.routes) {
+			walk.MsgBox(mw, "提示", "请先在转发列表中选择一条配置", walk.MsgBoxIconInformation)
+			return
+		}
+		route, err := buildRoute()
+		if err != nil {
+			walk.MsgBox(mw, "配置无效", err.Error(), walk.MsgBoxIconError)
+			return
+		}
+		if state.routes[idx].running() {
+			_ = state.routes[idx].server.Stop(context.Background())
+		}
+		state.routes[idx] = routeRuntime{route: route}
+		state.selected = idx
+		appendLog("已更新转发配置：%s:%d", route.LocalHost, route.LocalHTTPPort)
+		refreshRouteList()
+		showRoute(route, false)
+	}
+	startRoute := func() {
+		idx := state.selected
+		if routeList != nil && routeList.CurrentIndex() >= 0 {
+			idx = routeList.CurrentIndex()
+		}
+		if idx < 0 || idx >= len(state.routes) {
+			route, err := buildRoute()
+			if err != nil {
+				walk.MsgBox(mw, "启动失败", err.Error(), walk.MsgBoxIconError)
+				return
+			}
+			state.routes = append(state.routes, routeRuntime{route: route})
+			idx = len(state.routes) - 1
+			state.selected = idx
+		}
+		if state.routes[idx].running() {
+			_ = state.routes[idx].server.Stop(context.Background())
+			state.routes[idx].server = nil
+		}
+		route := state.routes[idx].route
+		server, err := newServer(route)
+		if err != nil {
+			walk.MsgBox(mw, "启动失败", err.Error(), walk.MsgBoxIconError)
 			return
 		}
 		if err := server.Start(); err != nil {
@@ -177,14 +317,10 @@ func main() {
 			walk.MsgBox(mw, "启动失败", err.Error(), walk.MsgBoxIconError)
 			return
 		}
-		state.server = server
-		state.route = route
-		_ = statusLabel.SetText("运行中")
-		statusLabel.SetTextColor(walk.RGB(22, 120, 75))
-		updateRunningProtocolLabels(route)
-		_ = localLabel.SetText(route.LocalHost + ":" + strconv.Itoa(route.LocalHTTPPort))
-		_ = upstreamLabel.SetText(proxyparse.Format(route.Upstream))
-		_ = errorLabel.SetText("-")
+		state.routes[idx].server = server
+		state.selected = idx
+		showRoute(route, true)
+		refreshRouteList()
 		appendLog("已启动本地 %s 代理 %s -> %s 上游 %s", route.LocalProtocol, localLabel.Text(), route.Upstream.Protocol, route.Upstream.Address())
 		if route.LocalHost == "0.0.0.0" {
 			appendLog("局域网设备请使用这台 Windows 电脑的内网 IP:%d 作为 %s 代理", route.LocalHTTPPort, route.LocalProtocol)
@@ -192,27 +328,67 @@ func main() {
 	}
 
 	stopRoute := func() {
-		if state.server == nil {
+		idx := state.selected
+		if routeList != nil && routeList.CurrentIndex() >= 0 {
+			idx = routeList.CurrentIndex()
+		}
+		if idx < 0 || idx >= len(state.routes) || !state.routes[idx].running() {
 			return
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		if err := state.server.Stop(ctx); err != nil {
+		if err := state.routes[idx].server.Stop(ctx); err != nil {
 			walk.MsgBox(mw, "停止失败", err.Error(), walk.MsgBoxIconError)
 			return
 		}
-		state.server = nil
-		_ = statusLabel.SetText("已停止")
-		statusLabel.SetTextColor(walk.RGB(123, 94, 0))
-		appendLog("已停止本地转发")
+		state.routes[idx].server = nil
+		showRoute(state.routes[idx].route, false)
+		refreshRouteList()
+		appendLog("已停止本地转发：%s:%d", state.routes[idx].route.LocalHost, state.routes[idx].route.LocalHTTPPort)
+	}
+	deleteRoute := func() {
+		idx := state.selected
+		if routeList != nil && routeList.CurrentIndex() >= 0 {
+			idx = routeList.CurrentIndex()
+		}
+		if idx < 0 || idx >= len(state.routes) {
+			return
+		}
+		if state.routes[idx].running() {
+			_ = state.routes[idx].server.Stop(context.Background())
+		}
+		appendLog("已删除转发配置：%s:%d", state.routes[idx].route.LocalHost, state.routes[idx].route.LocalHTTPPort)
+		state.routes = append(state.routes[:idx], state.routes[idx+1:]...)
+		if idx >= len(state.routes) {
+			idx = len(state.routes) - 1
+		}
+		state.selected = idx
+		refreshRouteList()
+		if idx >= 0 {
+			loadSelectedRoute()
+		}
+	}
+	stopAllRoutes := func() {
+		for i := range state.routes {
+			if state.routes[i].running() {
+				_ = state.routes[i].server.Stop(context.Background())
+				state.routes[i].server = nil
+			}
+		}
+		refreshRouteList()
+		appendLog("已停止全部转发")
 	}
 
 	testExitIP := func() {
-		if state.server == nil {
+		idx := state.selected
+		if routeList != nil && routeList.CurrentIndex() >= 0 {
+			idx = routeList.CurrentIndex()
+		}
+		if idx < 0 || idx >= len(state.routes) || !state.routes[idx].running() {
 			walk.MsgBox(mw, "提示", "请先启动本地转发", walk.MsgBoxIconInformation)
 			return
 		}
-		ip, err := checkIP(state.route)
+		ip, err := checkIP(state.routes[idx].route)
 		if err != nil {
 			_ = errorLabel.SetText(err.Error())
 			appendLog("出口检测失败：%v", err)
@@ -267,11 +443,15 @@ func main() {
 	}
 
 	enableSystemProxy := func() {
-		route, err := buildRoute()
-		if err != nil {
-			walk.MsgBox(mw, "系统代理失败", err.Error(), walk.MsgBoxIconError)
+		idx := state.selected
+		if routeList != nil && routeList.CurrentIndex() >= 0 {
+			idx = routeList.CurrentIndex()
+		}
+		if idx < 0 || idx >= len(state.routes) {
+			walk.MsgBox(mw, "系统代理失败", "请先在转发列表中选择一条配置", walk.MsgBoxIconError)
 			return
 		}
+		route := state.routes[idx].route
 		host := localConnectHost(route)
 		if err := systemproxy.EnableProxy(host, route.LocalHTTPPort, string(route.LocalProtocol)); err != nil {
 			walk.MsgBox(mw, "系统代理失败", err.Error(), walk.MsgBoxIconError)
@@ -392,13 +572,15 @@ func main() {
 							Composite{
 								Layout: HBox{MarginsZero: true, Spacing: 8},
 								Children: []Widget{
+									PushButton{Text: "新增配置", MinSize: Size{Width: 90, Height: 32}, OnClicked: addRoute},
+									PushButton{Text: "更新选中", MinSize: Size{Width: 90, Height: 32}, OnClicked: updateRoute},
 									PushButton{
-										Text:      "启动转发",
+										Text:      "启动选中",
 										MinSize:   Size{Width: 120, Height: 32},
 										Font:      Font{Family: "Microsoft YaHei UI", PointSize: 9, Bold: true},
 										OnClicked: startRoute,
 									},
-									PushButton{Text: "停止", MinSize: Size{Width: 90, Height: 32}, OnClicked: stopRoute},
+									PushButton{Text: "停止选中", MinSize: Size{Width: 90, Height: 32}, OnClicked: stopRoute},
 									PushButton{Text: "测试上游", MinSize: Size{Width: 96, Height: 32}, OnClicked: testUpstream},
 									PushButton{Text: "测试出口", MinSize: Size{Width: 96, Height: 32}, OnClicked: testExitIP},
 									HSpacer{},
@@ -431,6 +613,28 @@ func main() {
 									HSpacer{},
 								},
 							},
+						},
+					},
+				},
+			},
+			GroupBox{
+				Title:  "转发列表",
+				Layout: VBox{Margins: Margins{Left: 12, Top: 10, Right: 12, Bottom: 10}, Spacing: 8},
+				Children: []Widget{
+					ListBox{
+						AssignTo:              &routeList,
+						Model:                 []string{},
+						MinSize:               Size{Height: 120},
+						OnCurrentIndexChanged: loadSelectedRoute,
+					},
+					Composite{
+						Layout: HBox{MarginsZero: true, Spacing: 8},
+						Children: []Widget{
+							PushButton{Text: "启动选中", MinSize: Size{Width: 110, Height: 30}, OnClicked: startRoute},
+							PushButton{Text: "停止选中", MinSize: Size{Width: 110, Height: 30}, OnClicked: stopRoute},
+							PushButton{Text: "删除选中", MinSize: Size{Width: 110, Height: 30}, OnClicked: deleteRoute},
+							PushButton{Text: "停止全部", MinSize: Size{Width: 110, Height: 30}, OnClicked: stopAllRoutes},
+							HSpacer{},
 						},
 					},
 				},
