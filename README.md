@@ -1,0 +1,55 @@
+# ProxyDesk
+
+ProxyDesk is a Windows-first desktop proxy forwarder.
+
+The first version is designed around this workflow:
+
+1. Select a country in the app.
+2. Fetch or paste an upstream residential proxy.
+3. Bind it to a local port such as `127.0.0.1:7890`.
+4. Point browsers, fingerprint browsers, or tools to the local port.
+
+## Supported proxy format
+
+```text
+host:port:username:password
+```
+
+Examples:
+
+```text
+global.rpip.lokiproxy.com:35001:USER096836-session-5MHDsJKATDS:48a951
+107.150.104.202:2672:77ad76a2c1f1:dvy9mmpdknfcxxwcitwu
+```
+
+## Build
+
+Local macOS development:
+
+```bash
+go mod tidy
+go run ./cmd/proxydesk
+```
+
+Windows native build:
+
+```powershell
+.\scripts\build-windows.ps1
+```
+
+Windows EXE build is also configured in `.github/workflows/windows-build.yml`.
+This is the preferred path when developing on macOS, because the Fyne desktop
+driver uses native graphics dependencies that are best built on Windows.
+
+## Current MVP
+
+- Windows desktop UI with no login.
+- Country selection.
+- Upstream proxy input in `host:port:user:pass` format.
+- Supplier API fetch by selected country.
+- Local HTTP proxy forwarding, including HTTPS `CONNECT`.
+- Optional Windows system proxy switch.
+- Exit IP check through the local port.
+
+SOCKS5 is represented in the model/UI, and the next implementation step is
+adding the local SOCKS5 listener and multiple simultaneous port routes.
