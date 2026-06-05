@@ -9,6 +9,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -198,7 +200,7 @@ func main() {
 		appendLog("已关闭 Windows 系统代理")
 	}
 
-	MainWindow{
+	exitCode, err := MainWindow{
 		AssignTo: &mw,
 		Title:    "ProxyDesk",
 		MinSize:  Size{Width: 940, Height: 640},
@@ -272,6 +274,22 @@ func main() {
 			},
 		},
 	}.Run()
+	if err != nil {
+		writeStartupError(err)
+		walk.MsgBox(nil, "ProxyDesk 启动失败", err.Error(), walk.MsgBoxIconError)
+		os.Exit(1)
+	}
+	os.Exit(exitCode)
+}
+
+func writeStartupError(err error) {
+	exe, exeErr := os.Executable()
+	if exeErr != nil {
+		exe = "ProxyDesk.exe"
+	}
+	logPath := filepath.Join(filepath.Dir(exe), "proxydesk-error.log")
+	message := time.Now().Format(time.RFC3339) + "\r\n" + err.Error() + "\r\n"
+	_ = os.WriteFile(logPath, []byte(message), 0644)
 }
 
 func splitCountry(value string) (string, string) {
