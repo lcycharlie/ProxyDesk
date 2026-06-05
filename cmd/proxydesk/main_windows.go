@@ -573,9 +573,12 @@ func socks5Dialer(upstream core.UpstreamProxy) (proxy.Dialer, error) {
 
 func fetchPublicIP(client *http.Client) (string, error) {
 	checkURLs := []string{
+		"http://api.ipify.org?format=json",
+		"http://ipinfo.io/ip",
+		"http://icanhazip.com",
+		"https://api.ipify.org?format=json",
 		"https://ipinfo.io/ip",
 		"https://icanhazip.com",
-		"https://api.ipify.org?format=json",
 	}
 	var errs []string
 	for _, checkURL := range checkURLs {
@@ -591,7 +594,40 @@ func fetchPublicIP(client *http.Client) (string, error) {
 }
 
 func fetchPublicIPFrom(client *http.Client, checkURL string) (string, error) {
-	resp, err := client.Get(checkURL)
+	reqClient := *client
+	reqClient.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+
+	currentURL := checkURL
+	var resp *http.Response
+	var err error
+	for range 5 {
+		resp, err = reqClient.Get(currentURL)
+		if err != nil {
+			return "", err
+		}
+		if resp.StatusCode < 300 || resp.StatusCode >= 400 {
+			break
+		}
+		location := resp.Header.Get("Location")
+		_ = resp.Body.Close()
+		if location == "" {
+			return "", fmt.Errorf("redirect without Location: %s", resp.Status)
+		}
+		nextURL, err := url.Parse(location)
+		if err != nil {
+			return "", err
+		}
+		if !nextURL.IsAbs() {
+			baseURL, err := url.Parse(currentURL)
+			if err != nil {
+				return "", err
+			}
+			nextURL = baseURL.ResolveReference(nextURL)
+		}
+		currentURL = nextURL.String()
+	}
 	if err != nil {
 		return "", err
 	}
