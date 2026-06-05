@@ -644,7 +644,6 @@ func main() {
 							},
 						},
 					},
-					HSeparator{},
 					Composite{
 						Layout: HBox{MarginsZero: true, Spacing: 14},
 						Children: []Widget{
@@ -715,7 +714,6 @@ func main() {
 													Label{AssignTo: &errorLabel, Text: "-", TextColor: walk.RGB(185, 28, 28), EllipsisMode: EllipsisEnd},
 												},
 											},
-											HSeparator{},
 											Label{Text: "系统代理", Font: Font{Family: "Microsoft YaHei UI", PointSize: 10, Bold: true}, TextColor: walk.RGB(23, 37, 84)},
 											Label{Text: "需要让浏览器或多数桌面软件直接走代理时，可开启 Windows 系统代理。", TextColor: walk.RGB(100, 116, 139)},
 											Composite{
