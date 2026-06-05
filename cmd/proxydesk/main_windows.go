@@ -18,6 +18,7 @@ import (
 
 	"github.com/lxn/walk"
 	. "github.com/lxn/walk/declarative"
+	"github.com/lxn/win"
 	"golang.org/x/net/proxy"
 
 	core "proxydesk/internal/app"
@@ -472,6 +473,26 @@ func main() {
 			_ = logBox.SetText("")
 		}
 	}
+	minimizeWindow := func() {
+		if mw != nil {
+			win.ShowWindow(mw.Handle(), win.SW_MINIMIZE)
+		}
+	}
+	toggleMaximizeWindow := func() {
+		if mw == nil {
+			return
+		}
+		if win.IsZoomed(mw.Handle()) {
+			win.ShowWindow(mw.Handle(), win.SW_RESTORE)
+			return
+		}
+		win.ShowWindow(mw.Handle(), win.SW_MAXIMIZE)
+	}
+	closeWindow := func() {
+		if mw != nil {
+			_ = mw.Close()
+		}
+	}
 
 	exitCode, err := MainWindow{
 		AssignTo:   &mw,
@@ -515,6 +536,19 @@ func main() {
 										Text:      detectedLANIP + ":7890",
 										Font:      Font{Family: "Consolas", PointSize: 12, Bold: true},
 										TextColor: walk.RGB(14, 116, 101),
+									},
+								},
+							},
+							Composite{
+								Layout: VBox{MarginsZero: true, Spacing: 4},
+								Children: []Widget{
+									Composite{
+										Layout: HBox{MarginsZero: true, Spacing: 6},
+										Children: []Widget{
+											PushButton{Text: "缩小", MinSize: Size{Width: 54, Height: 26}, OnClicked: minimizeWindow},
+											PushButton{Text: "放大/还原", MinSize: Size{Width: 82, Height: 26}, OnClicked: toggleMaximizeWindow},
+											PushButton{Text: "关闭", MinSize: Size{Width: 54, Height: 26}, OnClicked: closeWindow},
+										},
 									},
 								},
 							},
