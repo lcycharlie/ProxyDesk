@@ -81,6 +81,7 @@ func main() {
 	var contentTitle *walk.Label
 	var dashboardPage, configPage, routePage, apiPage, logPage *walk.Composite
 	var statusLabel, exitIPLabel, upstreamLabel, localLabel, errorLabel, localProtocolLabel, upstreamProtocolLabel *walk.Label
+	var configCountryLabel, actualExitLabel *walk.Label
 	loadingRoute := false
 
 	appendLogDirect := func(format string, args ...any) {
@@ -214,6 +215,16 @@ func main() {
 			}.Display()
 		}
 		_ = exitIPLabel.SetText(exitDisplay)
+		if actualExitLabel != nil {
+			_ = actualExitLabel.SetText(exitDisplay)
+		}
+		if configCountryLabel != nil {
+			configCountry := strings.TrimSpace(route.CountryCode + " " + route.CountryName)
+			if configCountry == "" {
+				configCountry = "-"
+			}
+			_ = configCountryLabel.SetText(configCountry)
+		}
 		_ = errorLabel.SetText("-")
 	}
 	loadSelectedRoute := func() {
@@ -617,27 +628,32 @@ func main() {
 					},
 				},
 			},
-			HSplitter{
-				HandleWidth: 8,
+			Composite{
+				Layout: HBox{MarginsZero: true, Spacing: 0},
 				Children: []Widget{
 					Composite{
-						MinSize:    Size{Width: 112, Height: 520},
-						MaxSize:    Size{Width: 126},
-						Background: SolidColorBrush{Color: walk.RGB(209, 246, 236)},
-						Layout:     VBox{Margins: Margins{Left: 10, Top: 14, Right: 10, Bottom: 14}, Spacing: 8},
+						MinSize:    Size{Width: 154, Height: 520},
+						MaxSize:    Size{Width: 154},
+						Background: SolidColorBrush{Color: walk.RGB(18, 27, 43)},
+						Layout:     VBox{Margins: Margins{Left: 12, Top: 18, Right: 12, Bottom: 18}, Spacing: 10},
 						Children: []Widget{
-							Label{Text: "菜单", Font: Font{Family: "Microsoft YaHei UI", PointSize: 11, Bold: true}, TextColor: walk.RGB(11, 47, 71)},
-							PushButton{Text: "工作台", MinSize: Size{Height: 32}, Background: SolidColorBrush{Color: walk.RGB(35, 180, 150)}, OnClicked: openPage(0)},
-							PushButton{Text: "线路", MinSize: Size{Height: 32}, OnClicked: openPage(1)},
-							PushButton{Text: "转发", MinSize: Size{Height: 32}, OnClicked: openPage(2)},
-							PushButton{Text: "API", MinSize: Size{Height: 32}, OnClicked: openPage(3)},
-							PushButton{Text: "日志", MinSize: Size{Height: 32}, OnClicked: openPage(4)},
+							Label{Text: "ProxyDesk", Font: Font{Family: "Microsoft YaHei UI", PointSize: 12, Bold: true}, TextColor: walk.RGB(236, 253, 245)},
+							Label{Text: "端口转发", TextColor: walk.RGB(148, 163, 184)},
+							VSpacer{Size: 8},
+							PushButton{Text: "概览", MinSize: Size{Height: 34}, Background: SolidColorBrush{Color: walk.RGB(35, 180, 150)}, OnClicked: openPage(0)},
+							PushButton{Text: "线路配置", MinSize: Size{Height: 34}, OnClicked: openPage(1)},
+							PushButton{Text: "转发列表", MinSize: Size{Height: 34}, OnClicked: openPage(2)},
+							PushButton{Text: "供应商 API", MinSize: Size{Height: 34}, OnClicked: openPage(3)},
+							PushButton{Text: "运行日志", MinSize: Size{Height: 34}, OnClicked: openPage(4)},
+							VSpacer{},
+							Label{Text: "实际国家看出口检测", TextColor: walk.RGB(148, 163, 184)},
 						},
 					},
 					Composite{
-						MinSize:    Size{Width: 900, Height: 520},
-						Background: SolidColorBrush{Color: walk.RGB(247, 255, 252)},
-						Layout:     VBox{Margins: Margins{Left: 12, Top: 10, Right: 12, Bottom: 10}, Spacing: 8},
+						MinSize:       Size{Width: 760, Height: 520},
+						StretchFactor: 1,
+						Background:    SolidColorBrush{Color: walk.RGB(247, 255, 252)},
+						Layout:        VBox{Margins: Margins{Left: 12, Top: 10, Right: 12, Bottom: 10}, Spacing: 8},
 						Children: []Widget{
 							Label{AssignTo: &contentTitle, Text: "工作台", Font: Font{Family: "Microsoft YaHei UI", PointSize: 13, Bold: true}, TextColor: walk.RGB(11, 47, 71)},
 							Composite{
@@ -652,6 +668,10 @@ func main() {
 											Composite{
 												Layout: Grid{Columns: 2, MarginsZero: true, Spacing: 8},
 												Children: []Widget{
+													Label{Text: "配置国家/地区", TextColor: walk.RGB(71, 85, 105)},
+													Label{AssignTo: &configCountryLabel, Text: "-", TextColor: walk.RGB(15, 118, 110), EllipsisMode: EllipsisEnd},
+													Label{Text: "实际出口", TextColor: walk.RGB(71, 85, 105)},
+													Label{AssignTo: &actualExitLabel, Text: "-", TextColor: walk.RGB(15, 118, 110), EllipsisMode: EllipsisEnd},
 													Label{Text: "上游代理", TextColor: walk.RGB(71, 85, 105)},
 													Label{AssignTo: &upstreamLabel, Text: "-", TextColor: walk.RGB(15, 23, 42), EllipsisMode: EllipsisEnd},
 													Label{Text: "最近错误", TextColor: walk.RGB(71, 85, 105)},
