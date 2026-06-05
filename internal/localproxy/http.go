@@ -23,6 +23,7 @@ type HTTPServer struct {
 	server *http.Server
 	ln     net.Listener
 	mu     sync.Mutex
+	OnLog  func(format string, args ...any)
 }
 
 func NewHTTPServer(route app.PortRoute) *HTTPServer {
@@ -71,6 +72,7 @@ func (s *HTTPServer) Stop(ctx context.Context) error {
 }
 
 func (s *HTTPServer) handle(w http.ResponseWriter, r *http.Request) {
+	s.logf("收到请求：%s %s", r.Method, requestTarget(r))
 	if r.Method == http.MethodConnect {
 		s.handleConnect(w, r)
 		return
@@ -102,10 +104,12 @@ func (s *HTTPServer) handleHTTP(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := transport.RoundTrip(outReq)
 	if err != nil {
+		s.logf("HTTP 转发失败：%s %v", requestTarget(r), err)
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
 	defer resp.Body.Close()
+	s.logf("HTTP 转发完成：%s %s", requestTarget(r), resp.Status)
 
 	removeHopHeaders(resp.Header)
 	for k, values := range resp.Header {
@@ -126,6 +130,7 @@ func (s *HTTPServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 
 	upstreamConn, err := net.DialTimeout("tcp", s.route.Upstream.Address(), 20*time.Second)
 	if err != nil {
+		s.logf("CONNECT 连接上游失败：%s %v", r.Host, err)
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
@@ -139,6 +144,7 @@ func (s *HTTPServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 
 	if _, err := upstreamConn.Write([]byte(connectReq)); err != nil {
 		_ = upstreamConn.Close()
+		s.logf("CONNECT 写入上游失败：%s %v", r.Host, err)
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
@@ -147,11 +153,13 @@ func (s *HTTPServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 	resp, err := http.ReadResponse(br, r)
 	if err != nil {
 		_ = upstreamConn.Close()
+		s.logf("CONNECT 读取上游响应失败：%s %v", r.Host, err)
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
 	if resp.StatusCode != http.StatusOK {
 		_ = upstreamConn.Close()
+		s.logf("CONNECT 上游拒绝：%s %s", r.Host, resp.Status)
 		http.Error(w, "upstream CONNECT failed: "+resp.Status, http.StatusBadGateway)
 		return
 	}
@@ -159,12 +167,27 @@ func (s *HTTPServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 	clientConn, _, err := hijacker.Hijack()
 	if err != nil {
 		_ = upstreamConn.Close()
+		s.logf("CONNECT 接管客户端失败：%s %v", r.Host, err)
 		return
 	}
 	_, _ = clientConn.Write([]byte("HTTP/1.1 200 Connection Established\r\n\r\n"))
+	s.logf("CONNECT 隧道已建立：%s", r.Host)
 
 	go proxyCopy(upstreamConn, clientConn)
 	go proxyCopy(clientConn, upstreamConn)
+}
+
+func (s *HTTPServer) logf(format string, args ...any) {
+	if s.OnLog != nil {
+		s.OnLog(format, args...)
+	}
+}
+
+func requestTarget(r *http.Request) string {
+	if r.URL != nil && r.URL.String() != "" {
+		return r.URL.String()
+	}
+	return r.Host
 }
 
 func proxyCopy(dst net.Conn, src net.Conn) {

@@ -40,7 +40,7 @@ func main() {
 	var upstreamEdit, logBox *walk.TextEdit
 	var statusLabel, exitIPLabel, upstreamLabel, localLabel, errorLabel *walk.Label
 
-	appendLog := func(format string, args ...any) {
+	appendLogDirect := func(format string, args ...any) {
 		if logBox == nil {
 			return
 		}
@@ -50,6 +50,15 @@ func main() {
 			current += "\r\n"
 		}
 		_ = logBox.SetText(current + line)
+	}
+	appendLog := func(format string, args ...any) {
+		if mw != nil {
+			mw.Synchronize(func() {
+				appendLogDirect(format, args...)
+			})
+			return
+		}
+		appendLogDirect(format, args...)
 	}
 
 	selectedCountry := func() string {
@@ -110,6 +119,7 @@ func main() {
 			_ = state.server.Stop(context.Background())
 		}
 		server := localproxy.NewHTTPServer(route)
+		server.OnLog = appendLog
 		if err := server.Start(); err != nil {
 			_ = errorLabel.SetText(err.Error())
 			walk.MsgBox(mw, "启动失败", err.Error(), walk.MsgBoxIconError)
@@ -440,27 +450,7 @@ func checkIP(localPort int) (string, error) {
 		Transport: &http.Transport{Proxy: http.ProxyURL(parsedProxyURL)},
 		Timeout:   30 * time.Second,
 	}
-	resp, err := client.Get("https://ipinfo.io/json")
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", err
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("ipinfo status: %s", resp.Status)
-	}
-	var payload struct {
-		IP      string `json:"ip"`
-		Country string `json:"country"`
-		City    string `json:"city"`
-	}
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return strings.TrimSpace(string(body)), nil
-	}
-	return strings.TrimSpace(payload.IP + " " + payload.Country + " " + payload.City), nil
+	return fetchPublicIP(client)
 }
 
 func checkUpstream(upstream core.UpstreamProxy) (string, error) {
@@ -473,7 +463,11 @@ func checkUpstream(upstream core.UpstreamProxy) (string, error) {
 		Transport: &http.Transport{Proxy: http.ProxyURL(upstreamURL)},
 		Timeout:   30 * time.Second,
 	}
-	resp, err := client.Get("https://ipinfo.io/json")
+	return fetchPublicIP(client)
+}
+
+func fetchPublicIP(client *http.Client) (string, error) {
+	resp, err := client.Get("https://api.ipify.org?format=json")
 	if err != nil {
 		return "", err
 	}
@@ -483,15 +477,16 @@ func checkUpstream(upstream core.UpstreamProxy) (string, error) {
 		return "", err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return "", fmt.Errorf("ipinfo status: %s", resp.Status)
+		return "", fmt.Errorf("ip check status: %s", resp.Status)
 	}
 	var payload struct {
-		IP      string `json:"ip"`
-		Country string `json:"country"`
-		City    string `json:"city"`
+		IP string `json:"ip"`
 	}
 	if err := json.Unmarshal(body, &payload); err != nil {
 		return strings.TrimSpace(string(body)), nil
 	}
-	return strings.TrimSpace(payload.IP + " " + payload.Country + " " + payload.City), nil
+	if payload.IP == "" {
+		return strings.TrimSpace(string(body)), nil
+	}
+	return payload.IP, nil
 }
