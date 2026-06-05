@@ -70,12 +70,13 @@ func (i publicIPInfo) Display() string {
 func main() {
 	state := &runtimeState{}
 	state.selected = -1
-	countries := []string{"US - United States", "JP - Japan", "GB - United Kingdom", "DE - Germany", "SG - Singapore", "BR - Brazil", "IN - India"}
+	countries := allCountries()
+	defaultCountry := defaultCountryIndex(countries, "US")
 	detectedLANIP := detectLANIP()
 
 	var mw *walk.MainWindow
-	var countryCB, localProtocolCB, protocolCB *walk.ComboBox
-	var listenHostEdit, portEdit, apiEndpoint, apiCountryParam, apiJSONKey *walk.LineEdit
+	var countryCB, localProtocolCB, protocolCB, portCB *walk.ComboBox
+	var listenHostEdit, apiEndpoint, apiCountryParam, apiJSONKey *walk.LineEdit
 	var upstreamEdit, logBox *walk.TextEdit
 	var routeList *walk.ListBox
 	var contentTitle *walk.Label
@@ -125,6 +126,35 @@ func main() {
 			return core.ProtocolSOCKS5
 		}
 		return core.ProtocolHTTP
+	}
+	portOptions := func(keepPort int) []string {
+		used := map[int]bool{}
+		for _, rt := range state.routes {
+			if rt.route.LocalHTTPPort != keepPort {
+				used[rt.route.LocalHTTPPort] = true
+			}
+		}
+		options := []string{}
+		for port := 10000; port <= 10999; port++ {
+			if !used[port] {
+				options = append(options, strconv.Itoa(port))
+			}
+		}
+		return options
+	}
+	refreshPortOptions := func(keepPort int) {
+		if portCB == nil {
+			return
+		}
+		options := portOptions(keepPort)
+		_ = portCB.SetModel(options)
+		if keepPort > 0 {
+			_ = portCB.SetText(strconv.Itoa(keepPort))
+			return
+		}
+		if len(options) > 0 {
+			_ = portCB.SetCurrentIndex(0)
+		}
 	}
 	updateRunningProtocolLabels := func(route core.PortRoute) {
 		if localProtocolLabel != nil {
@@ -242,7 +272,10 @@ func main() {
 		state.selected = idx
 		route := state.routes[idx].route
 		_ = listenHostEdit.SetText(route.LocalHost)
-		_ = portEdit.SetText(strconv.Itoa(route.LocalHTTPPort))
+		refreshPortOptions(route.LocalHTTPPort)
+		if route.CountryCode != "" {
+			_ = countryCB.SetCurrentIndex(defaultCountryIndex(countries, route.CountryCode))
+		}
 		if route.LocalProtocol == core.ProtocolSOCKS5 {
 			_ = localProtocolCB.SetCurrentIndex(1)
 		} else {
@@ -265,9 +298,14 @@ func main() {
 		if listenHost != "0.0.0.0" && net.ParseIP(listenHost) == nil && listenHost != "localhost" {
 			return core.PortRoute{}, fmt.Errorf("监听地址应为 127.0.0.1、本机内网 IP 或 0.0.0.0")
 		}
-		port, err := strconv.Atoi(strings.TrimSpace(portEdit.Text()))
-		if err != nil || port < 1 || port > 65535 {
-			return core.PortRoute{}, fmt.Errorf("端口需要在 1-65535 之间")
+		port, err := strconv.Atoi(strings.TrimSpace(portCB.Text()))
+		if err != nil || port < 10000 || port > 10999 {
+			return core.PortRoute{}, fmt.Errorf("端口需要在 10000-10999 之间")
+		}
+		for _, rt := range state.routes {
+			if rt.route.LocalHTTPPort == port {
+				return core.PortRoute{}, fmt.Errorf("端口 %d 已被转发列表使用，请选择其他端口", port)
+			}
 		}
 		localProtocol := selectedLocalProtocol()
 		upstreamProtocol := selectedUpstreamProtocol()
@@ -325,29 +363,7 @@ func main() {
 		appendLog("已新增转发配置：%s:%d", route.LocalHost, route.LocalHTTPPort)
 		refreshRouteList()
 		showRoute(route, false)
-	}
-	updateRoute := func() {
-		idx := state.selected
-		if routeList != nil && routeList.CurrentIndex() >= 0 {
-			idx = routeList.CurrentIndex()
-		}
-		if idx < 0 || idx >= len(state.routes) {
-			walk.MsgBox(mw, "提示", "请先在转发列表中选择一条配置", walk.MsgBoxIconInformation)
-			return
-		}
-		route, err := buildRoute()
-		if err != nil {
-			walk.MsgBox(mw, "配置无效", err.Error(), walk.MsgBoxIconError)
-			return
-		}
-		if state.routes[idx].running() {
-			_ = state.routes[idx].server.Stop(context.Background())
-		}
-		state.routes[idx] = routeRuntime{route: route}
-		state.selected = idx
-		appendLog("已更新转发配置：%s:%d", route.LocalHost, route.LocalHTTPPort)
-		refreshRouteList()
-		showRoute(route, false)
+		refreshPortOptions(0)
 	}
 	startRoute := func() {
 		idx := state.selected
@@ -355,14 +371,8 @@ func main() {
 			idx = routeList.CurrentIndex()
 		}
 		if idx < 0 || idx >= len(state.routes) {
-			route, err := buildRoute()
-			if err != nil {
-				walk.MsgBox(mw, "启动失败", err.Error(), walk.MsgBoxIconError)
-				return
-			}
-			state.routes = append(state.routes, routeRuntime{route: route})
-			idx = len(state.routes) - 1
-			state.selected = idx
+			walk.MsgBox(mw, "提示", "请先在线路配置中新增配置，再到转发列表启动", walk.MsgBoxIconInformation)
+			return
 		}
 		if state.routes[idx].running() {
 			_ = state.routes[idx].server.Stop(context.Background())
@@ -426,6 +436,7 @@ func main() {
 		}
 		state.selected = idx
 		refreshRouteList()
+		refreshPortOptions(0)
 		if idx >= 0 {
 			loadSelectedRoute()
 		}
@@ -464,25 +475,6 @@ func main() {
 		_ = exitIPLabel.SetText(info.Display())
 		_ = errorLabel.SetText("-")
 		appendLog("选中转发出口检测成功：%s", info.Display())
-	}
-
-	testUpstream := func() {
-		route, err := buildRoute()
-		if err != nil {
-			walk.MsgBox(mw, "上游代理无效", err.Error(), walk.MsgBoxIconError)
-			return
-		}
-		info, err := checkUpstream(route.Upstream)
-		if err != nil {
-			_ = errorLabel.SetText(err.Error())
-			appendLog("上游检测失败：%v", err)
-			walk.MsgBox(mw, "上游检测失败", err.Error(), walk.MsgBoxIconError)
-			return
-		}
-		_ = exitIPLabel.SetText(info.Display())
-		_ = upstreamLabel.SetText(proxyparse.Format(route.Upstream))
-		_ = errorLabel.SetText("-")
-		appendLog("上游检测成功：%s", info.Display())
 	}
 
 	fetchAPI := func() {
@@ -573,8 +565,14 @@ func main() {
 				_ = envExitLabel.SetText("检测失败")
 				return
 			}
-			_ = envExitLabel.SetText(info.Display())
+			_ = envExitLabel.SetText(environmentCountryDisplay(info))
 		})
+	}
+	refreshEnvironmentExit := func() {
+		if envExitLabel != nil {
+			_ = envExitLabel.SetText("检测中...")
+		}
+		go updateEnvironmentExit()
 	}
 	time.AfterFunc(300*time.Millisecond, updateEnvironmentExit)
 
@@ -614,7 +612,14 @@ func main() {
 								Layout:     VBox{Margins: Margins{Left: 14, Top: 8, Right: 14, Bottom: 8}, Spacing: 2},
 								Background: SolidColorBrush{Color: walk.RGB(202, 245, 233)},
 								Children: []Widget{
-									Label{Text: "当前环境出口", TextColor: walk.RGB(15, 94, 91)},
+									Composite{
+										Layout: HBox{MarginsZero: true, Spacing: 6},
+										Children: []Widget{
+											Label{Text: "当前环境出口", TextColor: walk.RGB(15, 94, 91)},
+											HSpacer{},
+											PushButton{Text: "↻", MinSize: Size{Width: 28, Height: 24}, OnClicked: refreshEnvironmentExit},
+										},
+									},
 									Label{
 										AssignTo:  &envExitLabel,
 										Text:      "检测中...",
@@ -718,7 +723,6 @@ func main() {
 												Children: []Widget{
 													PushButton{Text: "开启系统代理", MinSize: Size{Width: 130, Height: 32}, Background: SolidColorBrush{Color: walk.RGB(35, 180, 150)}, OnClicked: enableSystemProxy},
 													PushButton{Text: "关闭系统代理", MinSize: Size{Width: 130, Height: 32}, OnClicked: disableSystemProxy},
-													PushButton{Text: "测试选中出口", MinSize: Size{Width: 130, Height: 32}, OnClicked: testExitIP},
 													HSpacer{},
 												},
 											},
@@ -750,7 +754,7 @@ func main() {
 												Layout: Grid{Columns: 2, MarginsZero: true, Spacing: 8},
 												Children: []Widget{
 													Label{Text: "配置国家/地区", TextColor: walk.RGB(71, 85, 105)},
-													ComboBox{AssignTo: &countryCB, Model: countries, CurrentIndex: 0, MinSize: Size{Height: 26}},
+													ComboBox{AssignTo: &countryCB, Model: countries, CurrentIndex: defaultCountry, MinSize: Size{Height: 26}},
 													Label{Text: "本地协议", TextColor: walk.RGB(71, 85, 105)},
 													ComboBox{AssignTo: &localProtocolCB, Model: []string{"HTTP/HTTPS", "SOCKS5"}, CurrentIndex: 0, MinSize: Size{Height: 26}, OnCurrentIndexChanged: markConfigChanged},
 													Label{Text: "上游协议", TextColor: walk.RGB(71, 85, 105)},
@@ -758,7 +762,7 @@ func main() {
 													Label{Text: "监听地址", TextColor: walk.RGB(71, 85, 105)},
 													LineEdit{AssignTo: &listenHostEdit, Text: detectedLANIP, MinSize: Size{Height: 26}, OnTextChanged: markConfigChanged},
 													Label{Text: "本地端口", TextColor: walk.RGB(71, 85, 105)},
-													LineEdit{AssignTo: &portEdit, Text: "7890", MinSize: Size{Height: 26}, OnTextChanged: markConfigChanged},
+													ComboBox{AssignTo: &portCB, Model: portOptions(0), CurrentIndex: 0, MinSize: Size{Height: 26}, OnCurrentIndexChanged: markConfigChanged},
 												},
 											},
 											Label{Text: "上游代理", TextColor: walk.RGB(71, 85, 105)},
@@ -768,11 +772,6 @@ func main() {
 												Layout: HBox{MarginsZero: true, Spacing: 8},
 												Children: []Widget{
 													PushButton{Text: "新增配置", MinSize: Size{Width: 90, Height: 32}, Background: SolidColorBrush{Color: walk.RGB(35, 180, 150)}, OnClicked: addRoute},
-													PushButton{Text: "更新选中", MinSize: Size{Width: 90, Height: 32}, OnClicked: updateRoute},
-													PushButton{Text: "启动选中", MinSize: Size{Width: 120, Height: 32}, Background: SolidColorBrush{Color: walk.RGB(35, 180, 150)}, Font: Font{Family: "Microsoft YaHei UI", PointSize: 9, Bold: true}, OnClicked: startRoute},
-													PushButton{Text: "停止选中", MinSize: Size{Width: 90, Height: 32}, OnClicked: stopRoute},
-													PushButton{Text: "测试当前上游", MinSize: Size{Width: 110, Height: 32}, OnClicked: testUpstream},
-													PushButton{Text: "测试选中出口", MinSize: Size{Width: 110, Height: 32}, OnClicked: testExitIP},
 													HSpacer{},
 												},
 											},
@@ -898,6 +897,278 @@ func splitCountry(value string) (string, string) {
 		return value, value
 	}
 	return parts[0], parts[1]
+}
+
+func defaultCountryIndex(countries []string, code string) int {
+	prefix := code + " - "
+	for i, country := range countries {
+		if strings.HasPrefix(country, prefix) {
+			return i
+		}
+	}
+	return 0
+}
+
+func environmentCountryDisplay(info publicIPInfo) string {
+	country := strings.TrimSpace(info.Country)
+	if country == "" {
+		return "-"
+	}
+	return country
+}
+
+func allCountries() []string {
+	return []string{
+		"AF - Afghanistan",
+		"AX - Aland Islands",
+		"AL - Albania",
+		"DZ - Algeria",
+		"AS - American Samoa",
+		"AD - Andorra",
+		"AO - Angola",
+		"AI - Anguilla",
+		"AQ - Antarctica",
+		"AG - Antigua and Barbuda",
+		"AR - Argentina",
+		"AM - Armenia",
+		"AW - Aruba",
+		"AU - Australia",
+		"AT - Austria",
+		"AZ - Azerbaijan",
+		"BS - Bahamas",
+		"BH - Bahrain",
+		"BD - Bangladesh",
+		"BB - Barbados",
+		"BY - Belarus",
+		"BE - Belgium",
+		"BZ - Belize",
+		"BJ - Benin",
+		"BM - Bermuda",
+		"BT - Bhutan",
+		"BO - Bolivia",
+		"BQ - Bonaire, Sint Eustatius and Saba",
+		"BA - Bosnia and Herzegovina",
+		"BW - Botswana",
+		"BV - Bouvet Island",
+		"BR - Brazil",
+		"IO - British Indian Ocean Territory",
+		"BN - Brunei Darussalam",
+		"BG - Bulgaria",
+		"BF - Burkina Faso",
+		"BI - Burundi",
+		"KH - Cambodia",
+		"CM - Cameroon",
+		"CA - Canada",
+		"CV - Cape Verde",
+		"KY - Cayman Islands",
+		"CF - Central African Republic",
+		"TD - Chad",
+		"CL - Chile",
+		"CN - China",
+		"CX - Christmas Island",
+		"CC - Cocos Islands",
+		"CO - Colombia",
+		"KM - Comoros",
+		"CG - Congo",
+		"CD - Congo, Democratic Republic",
+		"CK - Cook Islands",
+		"CR - Costa Rica",
+		"CI - Cote d'Ivoire",
+		"HR - Croatia",
+		"CU - Cuba",
+		"CW - Curacao",
+		"CY - Cyprus",
+		"CZ - Czech Republic",
+		"DK - Denmark",
+		"DJ - Djibouti",
+		"DM - Dominica",
+		"DO - Dominican Republic",
+		"EC - Ecuador",
+		"EG - Egypt",
+		"SV - El Salvador",
+		"GQ - Equatorial Guinea",
+		"ER - Eritrea",
+		"EE - Estonia",
+		"SZ - Eswatini",
+		"ET - Ethiopia",
+		"FK - Falkland Islands",
+		"FO - Faroe Islands",
+		"FJ - Fiji",
+		"FI - Finland",
+		"FR - France",
+		"GF - French Guiana",
+		"PF - French Polynesia",
+		"TF - French Southern Territories",
+		"GA - Gabon",
+		"GM - Gambia",
+		"GE - Georgia",
+		"DE - Germany",
+		"GH - Ghana",
+		"GI - Gibraltar",
+		"GR - Greece",
+		"GL - Greenland",
+		"GD - Grenada",
+		"GP - Guadeloupe",
+		"GU - Guam",
+		"GT - Guatemala",
+		"GG - Guernsey",
+		"GN - Guinea",
+		"GW - Guinea-Bissau",
+		"GY - Guyana",
+		"HT - Haiti",
+		"HM - Heard Island and McDonald Islands",
+		"VA - Holy See",
+		"HN - Honduras",
+		"HK - Hong Kong",
+		"HU - Hungary",
+		"IS - Iceland",
+		"IN - India",
+		"ID - Indonesia",
+		"IR - Iran",
+		"IQ - Iraq",
+		"IE - Ireland",
+		"IM - Isle of Man",
+		"IL - Israel",
+		"IT - Italy",
+		"JM - Jamaica",
+		"JP - Japan",
+		"JE - Jersey",
+		"JO - Jordan",
+		"KZ - Kazakhstan",
+		"KE - Kenya",
+		"KI - Kiribati",
+		"KP - Korea, Democratic People's Republic",
+		"KR - Korea, Republic",
+		"KW - Kuwait",
+		"KG - Kyrgyzstan",
+		"LA - Lao People's Democratic Republic",
+		"LV - Latvia",
+		"LB - Lebanon",
+		"LS - Lesotho",
+		"LR - Liberia",
+		"LY - Libya",
+		"LI - Liechtenstein",
+		"LT - Lithuania",
+		"LU - Luxembourg",
+		"MO - Macao",
+		"MG - Madagascar",
+		"MW - Malawi",
+		"MY - Malaysia",
+		"MV - Maldives",
+		"ML - Mali",
+		"MT - Malta",
+		"MH - Marshall Islands",
+		"MQ - Martinique",
+		"MR - Mauritania",
+		"MU - Mauritius",
+		"YT - Mayotte",
+		"MX - Mexico",
+		"FM - Micronesia",
+		"MD - Moldova",
+		"MC - Monaco",
+		"MN - Mongolia",
+		"ME - Montenegro",
+		"MS - Montserrat",
+		"MA - Morocco",
+		"MZ - Mozambique",
+		"MM - Myanmar",
+		"NA - Namibia",
+		"NR - Nauru",
+		"NP - Nepal",
+		"NL - Netherlands",
+		"NC - New Caledonia",
+		"NZ - New Zealand",
+		"NI - Nicaragua",
+		"NE - Niger",
+		"NG - Nigeria",
+		"NU - Niue",
+		"NF - Norfolk Island",
+		"MK - North Macedonia",
+		"MP - Northern Mariana Islands",
+		"NO - Norway",
+		"OM - Oman",
+		"PK - Pakistan",
+		"PW - Palau",
+		"PS - Palestine",
+		"PA - Panama",
+		"PG - Papua New Guinea",
+		"PY - Paraguay",
+		"PE - Peru",
+		"PH - Philippines",
+		"PN - Pitcairn",
+		"PL - Poland",
+		"PT - Portugal",
+		"PR - Puerto Rico",
+		"QA - Qatar",
+		"RE - Reunion",
+		"RO - Romania",
+		"RU - Russian Federation",
+		"RW - Rwanda",
+		"BL - Saint Barthelemy",
+		"SH - Saint Helena",
+		"KN - Saint Kitts and Nevis",
+		"LC - Saint Lucia",
+		"MF - Saint Martin",
+		"PM - Saint Pierre and Miquelon",
+		"VC - Saint Vincent and the Grenadines",
+		"WS - Samoa",
+		"SM - San Marino",
+		"ST - Sao Tome and Principe",
+		"SA - Saudi Arabia",
+		"SN - Senegal",
+		"RS - Serbia",
+		"SC - Seychelles",
+		"SL - Sierra Leone",
+		"SG - Singapore",
+		"SX - Sint Maarten",
+		"SK - Slovakia",
+		"SI - Slovenia",
+		"SB - Solomon Islands",
+		"SO - Somalia",
+		"ZA - South Africa",
+		"GS - South Georgia and the South Sandwich Islands",
+		"SS - South Sudan",
+		"ES - Spain",
+		"LK - Sri Lanka",
+		"SD - Sudan",
+		"SR - Suriname",
+		"SJ - Svalbard and Jan Mayen",
+		"SE - Sweden",
+		"CH - Switzerland",
+		"SY - Syrian Arab Republic",
+		"TW - Taiwan",
+		"TJ - Tajikistan",
+		"TZ - Tanzania",
+		"TH - Thailand",
+		"TL - Timor-Leste",
+		"TG - Togo",
+		"TK - Tokelau",
+		"TO - Tonga",
+		"TT - Trinidad and Tobago",
+		"TN - Tunisia",
+		"TR - Turkiye",
+		"TM - Turkmenistan",
+		"TC - Turks and Caicos Islands",
+		"TV - Tuvalu",
+		"UG - Uganda",
+		"UA - Ukraine",
+		"AE - United Arab Emirates",
+		"GB - United Kingdom",
+		"US - United States",
+		"UM - United States Minor Outlying Islands",
+		"UY - Uruguay",
+		"UZ - Uzbekistan",
+		"VU - Vanuatu",
+		"VE - Venezuela",
+		"VN - Viet Nam",
+		"VG - Virgin Islands, British",
+		"VI - Virgin Islands, U.S.",
+		"WF - Wallis and Futuna",
+		"EH - Western Sahara",
+		"YE - Yemen",
+		"ZM - Zambia",
+		"ZW - Zimbabwe",
+	}
 }
 
 func detectLANIP() string {
