@@ -78,6 +78,7 @@ func main() {
 
 	var mw *walk.MainWindow
 	var countryCB, localProtocolCB, protocolCB, portCB *walk.ComboBox
+	var apiLocalProtocolCB, apiProtocolCB, apiPortCB *walk.ComboBox
 	var countrySearchEdit, listenHostEdit, portStartEdit, portEndEdit, apiEndpoint, apiCountryParam, apiJSONKey *walk.LineEdit
 	var upstreamEdit, logBox *walk.TextEdit
 	var routeList *walk.ListBox
@@ -162,6 +163,18 @@ func main() {
 		}
 		return core.ProtocolHTTP
 	}
+	selectedAPILocalProtocol := func() core.Protocol {
+		if apiLocalProtocolCB != nil && apiLocalProtocolCB.CurrentIndex() == 1 {
+			return core.ProtocolSOCKS5
+		}
+		return core.ProtocolHTTP
+	}
+	selectedAPIUpstreamProtocol := func() core.Protocol {
+		if apiProtocolCB != nil && apiProtocolCB.CurrentIndex() == 1 {
+			return core.ProtocolSOCKS5
+		}
+		return core.ProtocolHTTP
+	}
 	currentPortRange := func() (int, int) {
 		start := 10000
 		end := 10099
@@ -210,20 +223,24 @@ func main() {
 		return options
 	}
 	refreshPortOptions := func(keepPort int) {
-		if portCB == nil {
-			return
-		}
 		options := portOptions(keepPort)
-		_ = portCB.SetModel(options)
-		if keepPort > 0 {
-			_ = portCB.SetText(strconv.Itoa(keepPort))
-			return
+		refreshOnePortCombo := func(combo *walk.ComboBox) {
+			if combo == nil {
+				return
+			}
+			_ = combo.SetModel(options)
+			if keepPort > 0 {
+				_ = combo.SetText(strconv.Itoa(keepPort))
+				return
+			}
+			if len(options) > 0 {
+				_ = combo.SetCurrentIndex(0)
+				return
+			}
+			_ = combo.SetText("")
 		}
-		if len(options) > 0 {
-			_ = portCB.SetCurrentIndex(0)
-			return
-		}
-		_ = portCB.SetText("")
+		refreshOnePortCombo(portCB)
+		refreshOnePortCombo(apiPortCB)
 	}
 	updateRunningProtocolLabels := func(route core.PortRoute) {
 		if localProtocolLabel != nil {
@@ -399,6 +416,45 @@ func main() {
 		}, nil
 	}
 
+	buildRouteFromUpstream := func(portText string, localProtocol core.Protocol, upstream core.UpstreamProxy) (core.PortRoute, error) {
+		startPort, endPort, err := validatePortRange()
+		if err != nil {
+			return core.PortRoute{}, err
+		}
+		if strings.TrimSpace(portText) == "" {
+			return core.PortRoute{}, fmt.Errorf("当前端口范围内没有可用端口，请扩大范围或删除转发列表中的配置")
+		}
+		port, err := strconv.Atoi(strings.TrimSpace(portText))
+		if err != nil || port < startPort || port > endPort {
+			return core.PortRoute{}, fmt.Errorf("端口需要在 %d-%d 之间", startPort, endPort)
+		}
+		for _, rt := range state.routes {
+			if rt.route.LocalHTTPPort == port {
+				return core.PortRoute{}, fmt.Errorf("端口 %d 已被转发列表使用，请选择其他端口", port)
+			}
+		}
+		return core.PortRoute{
+			ID:            "route-" + strconv.Itoa(port),
+			Name:          "Port " + strconv.Itoa(port),
+			LocalHost:     detectedLANIP,
+			LocalHTTPPort: port,
+			LocalProtocol: localProtocol,
+			Protocol:      upstream.Protocol,
+			Upstream:      upstream,
+			Enabled:       true,
+			UpdatedAt:     time.Now(),
+		}, nil
+	}
+
+	addRouteToList := func(route core.PortRoute, source string) {
+		state.routes = append(state.routes, routeRuntime{route: route})
+		state.selected = len(state.routes) - 1
+		appendLog("已新增%s转发配置：%s:%d -> %s", source, route.LocalHost, route.LocalHTTPPort, route.Upstream.Address())
+		refreshRouteList()
+		showRoute(route, false)
+		refreshPortOptions(0)
+	}
+
 	newServer := func(route core.PortRoute) (interface {
 		Start() error
 		Stop(context.Context) error
@@ -422,12 +478,7 @@ func main() {
 			walk.MsgBox(mw, "配置无效", err.Error(), walk.MsgBoxIconError)
 			return
 		}
-		state.routes = append(state.routes, routeRuntime{route: route})
-		state.selected = len(state.routes) - 1
-		appendLog("已新增转发配置：%s:%d", route.LocalHost, route.LocalHTTPPort)
-		refreshRouteList()
-		showRoute(route, false)
-		refreshPortOptions(0)
+		addRouteToList(route, "")
 	}
 	startRoute := func() {
 		idx := state.selected
@@ -543,6 +594,7 @@ func main() {
 
 	fetchAPI := func() {
 		countryCode, _ := splitCountry(selectedCountry())
+		upstreamProtocol := selectedAPIUpstreamProtocol()
 		client := provider.Client{
 			Config: core.APIConfig{
 				Endpoint:        strings.TrimSpace(apiEndpoint.Text()),
@@ -553,16 +605,24 @@ func main() {
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 		defer cancel()
-		upstream, err := client.Fetch(ctx, countryCode, selectedUpstreamProtocol())
+		upstream, err := client.Fetch(ctx, countryCode, upstreamProtocol)
 		if err != nil {
 			_ = errorLabel.SetText(err.Error())
 			appendLog("API 获取失败：%v", err)
 			walk.MsgBox(mw, "API 获取失败", err.Error(), walk.MsgBoxIconError)
 			return
 		}
+		route, err := buildRouteFromUpstream(apiPortCB.Text(), selectedAPILocalProtocol(), upstream)
+		if err != nil {
+			_ = errorLabel.SetText(err.Error())
+			appendLog("API 新增转发失败：%v", err)
+			walk.MsgBox(mw, "API 新增转发失败", err.Error(), walk.MsgBoxIconError)
+			return
+		}
+		addRouteToList(route, " API")
 		_ = upstreamEdit.SetText(proxyparse.Format(upstream))
 		_ = errorLabel.SetText("-")
-		appendLog("API 获取成功：%s %s", countryCode, upstream.Address())
+		appendLog("API 获取成功：%s %s，已加入转发列表端口 %d", countryCode, upstream.Address(), route.LocalHTTPPort)
 	}
 
 	enableSystemProxy := func() {
@@ -911,10 +971,16 @@ func main() {
 													LineEdit{AssignTo: &countrySearchEdit, MinSize: Size{Height: 26}, OnTextChanged: refreshCountryOptions},
 													Label{Text: "国家/地区"},
 													ComboBox{AssignTo: &countryCB, Model: filteredCountries, CurrentIndex: defaultCountry, MinSize: Size{Height: 26}},
+													Label{Text: "本地协议"},
+													ComboBox{AssignTo: &apiLocalProtocolCB, Model: []string{"HTTP/HTTPS", "SOCKS5"}, CurrentIndex: 0, MinSize: Size{Height: 26}},
+													Label{Text: "上游协议"},
+													ComboBox{AssignTo: &apiProtocolCB, Model: []string{"HTTP", "SOCKS5"}, CurrentIndex: 0, MinSize: Size{Height: 26}},
+													Label{Text: "本地端口"},
+													ComboBox{AssignTo: &apiPortCB, Model: portOptions(0), CurrentIndex: 0, MinSize: Size{Height: 26}},
 													Label{Text: "API 地址"},
-													LineEdit{AssignTo: &apiEndpoint, MinSize: Size{Height: 26}},
+													LineEdit{AssignTo: &apiEndpoint, Text: "http://gen.lokiproxy.com/gen?ptype=13&count=1&proto=http&stype=text&split=rn", MinSize: Size{Height: 26}},
 													Label{Text: "国家参数"},
-													LineEdit{AssignTo: &apiCountryParam, MinSize: Size{Height: 26}},
+													LineEdit{AssignTo: &apiCountryParam, Text: "region", MinSize: Size{Height: 26}},
 													Label{Text: "JSON 字段"},
 													LineEdit{AssignTo: &apiJSONKey, MinSize: Size{Height: 26}},
 												},
