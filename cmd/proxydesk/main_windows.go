@@ -157,6 +157,25 @@ func main() {
 		appendLog("出口检测成功：%s", ip)
 	}
 
+	testUpstream := func() {
+		route, err := buildRoute()
+		if err != nil {
+			walk.MsgBox(mw, "上游代理无效", err.Error(), walk.MsgBoxIconError)
+			return
+		}
+		ip, err := checkUpstream(route.Upstream)
+		if err != nil {
+			_ = errorLabel.SetText(err.Error())
+			appendLog("上游检测失败：%v", err)
+			walk.MsgBox(mw, "上游检测失败", err.Error(), walk.MsgBoxIconError)
+			return
+		}
+		_ = exitIPLabel.SetText(ip)
+		_ = upstreamLabel.SetText(proxyparse.Format(route.Upstream))
+		_ = errorLabel.SetText("-")
+		appendLog("上游检测成功：%s", ip)
+	}
+
 	fetchAPI := func() {
 		countryCode, _ := splitCountry(selectedCountry())
 		client := provider.Client{
@@ -305,6 +324,7 @@ func main() {
 										OnClicked: startRoute,
 									},
 									PushButton{Text: "停止", MinSize: Size{Width: 90, Height: 32}, OnClicked: stopRoute},
+									PushButton{Text: "测试上游", MinSize: Size{Width: 96, Height: 32}, OnClicked: testUpstream},
 									PushButton{Text: "测试出口", MinSize: Size{Width: 96, Height: 32}, OnClicked: testExitIP},
 									HSpacer{},
 								},
@@ -418,6 +438,39 @@ func checkIP(localPort int) (string, error) {
 
 	client := &http.Client{
 		Transport: &http.Transport{Proxy: http.ProxyURL(parsedProxyURL)},
+		Timeout:   30 * time.Second,
+	}
+	resp, err := client.Get("https://ipinfo.io/json")
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("ipinfo status: %s", resp.Status)
+	}
+	var payload struct {
+		IP      string `json:"ip"`
+		Country string `json:"country"`
+		City    string `json:"city"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return strings.TrimSpace(string(body)), nil
+	}
+	return strings.TrimSpace(payload.IP + " " + payload.Country + " " + payload.City), nil
+}
+
+func checkUpstream(upstream core.UpstreamProxy) (string, error) {
+	upstreamURL := &url.URL{Scheme: "http", Host: upstream.Address()}
+	if upstream.Username != "" || upstream.Password != "" {
+		upstreamURL.User = url.UserPassword(upstream.Username, upstream.Password)
+	}
+
+	client := &http.Client{
+		Transport: &http.Transport{Proxy: http.ProxyURL(upstreamURL)},
 		Timeout:   30 * time.Second,
 	}
 	resp, err := client.Get("https://ipinfo.io/json")
