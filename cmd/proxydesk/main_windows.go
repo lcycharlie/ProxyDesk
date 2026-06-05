@@ -697,7 +697,8 @@ func main() {
 							},
 							HSpacer{},
 							Composite{
-								MinSize:    Size{Width: 190, Height: 56},
+								MinSize:    Size{Width: 230, Height: 56},
+								MaxSize:    Size{Width: 230, Height: 56},
 								Layout:     VBox{Margins: Margins{Left: 14, Top: 8, Right: 14, Bottom: 8}, Spacing: 2},
 								Background: SolidColorBrush{Color: walk.RGB(202, 245, 233)},
 								Children: []Widget{
@@ -718,15 +719,17 @@ func main() {
 										},
 									},
 									Label{
-										AssignTo:  &envExitLabel,
-										Text:      "检测中...",
-										Font:      Font{Family: "Consolas", PointSize: 12, Bold: true},
-										TextColor: walk.RGB(14, 116, 101),
+										AssignTo:     &envExitLabel,
+										Text:         "检测中...",
+										Font:         Font{Family: "Consolas", PointSize: 12, Bold: true},
+										TextColor:    walk.RGB(14, 116, 101),
+										EllipsisMode: EllipsisEnd,
 									},
 								},
 							},
 							Composite{
-								MinSize:    Size{Width: 190, Height: 56},
+								MinSize:    Size{Width: 230, Height: 56},
+								MaxSize:    Size{Width: 230, Height: 56},
 								Layout:     VBox{Margins: Margins{Left: 14, Top: 8, Right: 14, Bottom: 8}, Spacing: 2},
 								Background: SolidColorBrush{Color: walk.RGB(202, 245, 233)},
 								Children: []Widget{
@@ -1034,11 +1037,18 @@ func filterCountries(countries []string, query string) []string {
 }
 
 func environmentCountryDisplay(info publicIPInfo) string {
+	ip := strings.TrimSpace(info.IP)
 	country := strings.TrimSpace(info.Country)
-	if country == "" {
-		return "-"
+	if ip != "" && country != "" {
+		return ip + " " + country
 	}
-	return country
+	if ip != "" {
+		return ip
+	}
+	if country != "" {
+		return country
+	}
+	return "-"
 }
 
 func allCountries() []string {
