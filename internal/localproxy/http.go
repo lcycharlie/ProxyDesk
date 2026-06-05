@@ -15,6 +15,7 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/net/proxy"
 	"proxydesk/internal/app"
 )
 
@@ -81,18 +82,11 @@ func (s *HTTPServer) handle(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *HTTPServer) handleHTTP(w http.ResponseWriter, r *http.Request) {
-	upstreamURL := &url.URL{Scheme: "http", Host: s.route.Upstream.Address()}
-	if s.route.Upstream.Username != "" || s.route.Upstream.Password != "" {
-		upstreamURL.User = url.UserPassword(s.route.Upstream.Username, s.route.Upstream.Password)
-	}
-
-	transport := &http.Transport{
-		Proxy: http.ProxyURL(upstreamURL),
-		DialContext: (&net.Dialer{
-			Timeout:   20 * time.Second,
-			KeepAlive: 30 * time.Second,
-		}).DialContext,
-		TLSHandshakeTimeout: 20 * time.Second,
+	transport, err := s.transport()
+	if err != nil {
+		s.logf("创建转发通道失败：%v", err)
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
 	}
 	defer transport.CloseIdleConnections()
 
@@ -128,39 +122,10 @@ func (s *HTTPServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	upstreamConn, err := net.DialTimeout("tcp", s.route.Upstream.Address(), 20*time.Second)
+	upstreamConn, err := s.dialTarget("tcp", r.Host)
 	if err != nil {
 		s.logf("CONNECT 连接上游失败：%s %v", r.Host, err)
 		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-
-	connectReq := fmt.Sprintf("CONNECT %s HTTP/1.1\r\nHost: %s\r\n", r.Host, r.Host)
-	if s.route.Upstream.Username != "" || s.route.Upstream.Password != "" {
-		token := base64.StdEncoding.EncodeToString([]byte(s.route.Upstream.Username + ":" + s.route.Upstream.Password))
-		connectReq += "Proxy-Authorization: Basic " + token + "\r\n"
-	}
-	connectReq += "\r\n"
-
-	if _, err := upstreamConn.Write([]byte(connectReq)); err != nil {
-		_ = upstreamConn.Close()
-		s.logf("CONNECT 写入上游失败：%s %v", r.Host, err)
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-
-	br := bufio.NewReader(upstreamConn)
-	resp, err := http.ReadResponse(br, r)
-	if err != nil {
-		_ = upstreamConn.Close()
-		s.logf("CONNECT 读取上游响应失败：%s %v", r.Host, err)
-		http.Error(w, err.Error(), http.StatusBadGateway)
-		return
-	}
-	if resp.StatusCode != http.StatusOK {
-		_ = upstreamConn.Close()
-		s.logf("CONNECT 上游拒绝：%s %s", r.Host, resp.Status)
-		http.Error(w, "upstream CONNECT failed: "+resp.Status, http.StatusBadGateway)
 		return
 	}
 
@@ -175,6 +140,93 @@ func (s *HTTPServer) handleConnect(w http.ResponseWriter, r *http.Request) {
 
 	go proxyCopy(upstreamConn, clientConn)
 	go proxyCopy(clientConn, upstreamConn)
+}
+
+func (s *HTTPServer) transport() (*http.Transport, error) {
+	transport := &http.Transport{
+		DialContext: (&net.Dialer{
+			Timeout:   20 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		TLSHandshakeTimeout: 20 * time.Second,
+	}
+
+	switch s.route.Upstream.Protocol {
+	case app.ProtocolHTTP:
+		upstreamURL := &url.URL{Scheme: "http", Host: s.route.Upstream.Address()}
+		if s.route.Upstream.Username != "" || s.route.Upstream.Password != "" {
+			upstreamURL.User = url.UserPassword(s.route.Upstream.Username, s.route.Upstream.Password)
+		}
+		transport.Proxy = http.ProxyURL(upstreamURL)
+		return transport, nil
+	case app.ProtocolSOCKS5:
+		dialer, err := s.socks5Dialer()
+		if err != nil {
+			return nil, err
+		}
+		transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return dialer.Dial(network, addr)
+		}
+		return transport, nil
+	default:
+		return nil, fmt.Errorf("unsupported upstream protocol %s", s.route.Upstream.Protocol)
+	}
+}
+
+func (s *HTTPServer) dialTarget(network, addr string) (net.Conn, error) {
+	switch s.route.Upstream.Protocol {
+	case app.ProtocolHTTP:
+		return s.dialTargetViaHTTPProxy(addr)
+	case app.ProtocolSOCKS5:
+		dialer, err := s.socks5Dialer()
+		if err != nil {
+			return nil, err
+		}
+		return dialer.Dial(network, addr)
+	default:
+		return nil, fmt.Errorf("unsupported upstream protocol %s", s.route.Upstream.Protocol)
+	}
+}
+
+func (s *HTTPServer) dialTargetViaHTTPProxy(addr string) (net.Conn, error) {
+	upstreamConn, err := net.DialTimeout("tcp", s.route.Upstream.Address(), 20*time.Second)
+	if err != nil {
+		return nil, err
+	}
+
+	connectReq := fmt.Sprintf("CONNECT %s HTTP/1.1\r\nHost: %s\r\n", addr, addr)
+	if s.route.Upstream.Username != "" || s.route.Upstream.Password != "" {
+		token := base64.StdEncoding.EncodeToString([]byte(s.route.Upstream.Username + ":" + s.route.Upstream.Password))
+		connectReq += "Proxy-Authorization: Basic " + token + "\r\n"
+	}
+	connectReq += "\r\n"
+
+	if _, err := upstreamConn.Write([]byte(connectReq)); err != nil {
+		_ = upstreamConn.Close()
+		return nil, err
+	}
+
+	resp, err := http.ReadResponse(bufio.NewReader(upstreamConn), nil)
+	if err != nil {
+		_ = upstreamConn.Close()
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		_ = upstreamConn.Close()
+		return nil, fmt.Errorf("upstream CONNECT failed: %s", resp.Status)
+	}
+	return upstreamConn, nil
+}
+
+func (s *HTTPServer) socks5Dialer() (proxy.Dialer, error) {
+	var auth *proxy.Auth
+	if s.route.Upstream.Username != "" || s.route.Upstream.Password != "" {
+		auth = &proxy.Auth{
+			User:     s.route.Upstream.Username,
+			Password: s.route.Upstream.Password,
+		}
+	}
+	return proxy.SOCKS5("tcp", s.route.Upstream.Address(), auth, proxy.Direct)
 }
 
 func (s *HTTPServer) logf(format string, args ...any) {

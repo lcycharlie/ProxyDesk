@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/lxn/walk"
 	. "github.com/lxn/walk/declarative"
+	"golang.org/x/net/proxy"
 
 	core "proxydesk/internal/app"
 	"proxydesk/internal/localproxy"
@@ -82,9 +84,6 @@ func main() {
 			return core.PortRoute{}, fmt.Errorf("端口需要在 1-65535 之间")
 		}
 		protocol := selectedProtocol()
-		if protocol == core.ProtocolSOCKS5 {
-			return core.PortRoute{}, fmt.Errorf("当前版本先支持本地 HTTP 转发，SOCKS5 本地监听下一版接入")
-		}
 
 		line := strings.TrimSpace(upstreamEdit.Text())
 		if strings.Contains(line, "\n") {
@@ -316,7 +315,7 @@ func main() {
 								Children: []Widget{
 									Label{Text: "国家/地区", TextColor: walk.RGB(71, 85, 105)},
 									ComboBox{AssignTo: &countryCB, Model: countries, CurrentIndex: 0, MinSize: Size{Height: 26}},
-									Label{Text: "本地协议", TextColor: walk.RGB(71, 85, 105)},
+									Label{Text: "上游协议", TextColor: walk.RGB(71, 85, 105)},
 									ComboBox{AssignTo: &protocolCB, Model: []string{"HTTP", "SOCKS5"}, CurrentIndex: 0, MinSize: Size{Height: 26}},
 									Label{Text: "本地端口", TextColor: walk.RGB(71, 85, 105)},
 									LineEdit{AssignTo: &portEdit, Text: "7890", MinSize: Size{Height: 26}},
@@ -454,16 +453,38 @@ func checkIP(localPort int) (string, error) {
 }
 
 func checkUpstream(upstream core.UpstreamProxy) (string, error) {
-	upstreamURL := &url.URL{Scheme: "http", Host: upstream.Address()}
-	if upstream.Username != "" || upstream.Password != "" {
-		upstreamURL.User = url.UserPassword(upstream.Username, upstream.Password)
+	transport := &http.Transport{}
+	switch upstream.Protocol {
+	case core.ProtocolHTTP:
+		upstreamURL := &url.URL{Scheme: "http", Host: upstream.Address()}
+		if upstream.Username != "" || upstream.Password != "" {
+			upstreamURL.User = url.UserPassword(upstream.Username, upstream.Password)
+		}
+		transport.Proxy = http.ProxyURL(upstreamURL)
+	case core.ProtocolSOCKS5:
+		dialer, err := socks5Dialer(upstream)
+		if err != nil {
+			return "", err
+		}
+		transport.DialContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return dialer.Dial(network, addr)
+		}
+	default:
+		return "", fmt.Errorf("unsupported upstream protocol %s", upstream.Protocol)
 	}
-
-	client := &http.Client{
-		Transport: &http.Transport{Proxy: http.ProxyURL(upstreamURL)},
-		Timeout:   30 * time.Second,
-	}
+	client := &http.Client{Transport: transport, Timeout: 30 * time.Second}
 	return fetchPublicIP(client)
+}
+
+func socks5Dialer(upstream core.UpstreamProxy) (proxy.Dialer, error) {
+	var auth *proxy.Auth
+	if upstream.Username != "" || upstream.Password != "" {
+		auth = &proxy.Auth{
+			User:     upstream.Username,
+			Password: upstream.Password,
+		}
+	}
+	return proxy.SOCKS5("tcp", upstream.Address(), auth, proxy.Direct)
 }
 
 func fetchPublicIP(client *http.Client) (string, error) {
