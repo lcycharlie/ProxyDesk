@@ -102,6 +102,7 @@ func main() {
 	var statusLabel, exitIPLabel, upstreamLabel, errorLabel, localProtocolLabel, upstreamProtocolLabel *walk.Label
 	var envExitLabel, localIPLabel *walk.Label
 	var actualExitLabel *walk.Label
+	var buttonFont *walk.Font
 	loadingRoute := false
 	currentPage := 0
 	currentSettingsSection := 0
@@ -683,7 +684,6 @@ func main() {
 		return CustomWidget{
 			AssignTo:            assignTo,
 			MinSize:             Size{Width: width, Height: height},
-			ClearsBackground:    true,
 			InvalidatesOnResize: true,
 			PaintMode:           PaintBuffered,
 			PaintPixels: func(canvas *walk.Canvas, _ walk.Rectangle) error {
@@ -720,7 +720,9 @@ func main() {
 					return err
 				}
 				var font *walk.Font
-				if mw != nil {
+				if buttonFont != nil {
+					font = buttonFont
+				} else if mw != nil {
 					font = mw.Font()
 				}
 				return canvas.DrawTextPixels(text, font, textColor, bounds, walk.TextCenter|walk.TextVCenter|walk.TextSingleLine|walk.TextEndEllipsis)
@@ -794,6 +796,10 @@ func main() {
 		go updateEnvironmentExit()
 	}
 	time.AfterFunc(300*time.Millisecond, updateEnvironmentExit)
+	buttonFont, _ = walk.NewFont("Microsoft YaHei UI", 9, 0)
+	if buttonFont != nil {
+		defer buttonFont.Dispose()
+	}
 
 	exitCode, err := MainWindow{
 		AssignTo:   &mw,
