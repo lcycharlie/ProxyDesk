@@ -638,6 +638,12 @@ func main() {
 		_ = upstreamEdit.SetText(proxyparse.Format(upstream))
 		_ = errorLabel.SetText("-")
 		appendLog("API 获取成功：%s %s，已加入转发列表端口 %d", countryCode, upstream.Address(), route.LocalHTTPPort)
+		walk.MsgBox(
+			mw,
+			"API 获取成功",
+			fmt.Sprintf("已提取 IP 并加入转发列表。\n\n本地代理：%s:%d\n上游代理：%s\n\n请到“转发列表”查看和启动。", route.LocalHost, route.LocalHTTPPort, upstream.Address()),
+			walk.MsgBoxIconInformation,
+		)
 	}
 
 	enableSystemProxy := func() {
@@ -1015,7 +1021,8 @@ func main() {
 											PushButton{AssignTo: &settingsAPIBtn, Text: "供应商 API", MinSize: Size{Height: 36}, Background: SolidColorBrush{Color: walk.RGB(255, 255, 255)}, OnClicked: openSettingsSection(1)},
 											PushButton{AssignTo: &settingsLogBtn, Text: "运行日志", MinSize: Size{Height: 36}, Background: SolidColorBrush{Color: walk.RGB(255, 255, 255)}, OnClicked: openSettingsSection(2)},
 											VSpacer{},
-											Label{Text: "端口和 API 共用同一个可用端口池。", TextColor: accentText},
+											Label{Text: "端口和 API 共用", TextColor: accentText},
+											Label{Text: "同一个可用端口池。", TextColor: accentText},
 										},
 									},
 									Composite{
