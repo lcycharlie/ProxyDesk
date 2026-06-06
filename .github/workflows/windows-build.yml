@@ -27,7 +27,15 @@ jobs:
       - name: Build Windows exe
         run: go build -ldflags="-H windowsgui -s -w" -o dist/ProxyDesk.exe ./cmd/proxydesk
 
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Build Windows installer
+        run: iscc build/windows/ProxyDesk.iss
+
       - uses: actions/upload-artifact@v4
         with:
           name: ProxyDesk-windows-amd64
-          path: dist/ProxyDesk.exe
+          path: |
+            dist/ProxyDesk.exe
+            dist/ProxyDeskSetup.exe
