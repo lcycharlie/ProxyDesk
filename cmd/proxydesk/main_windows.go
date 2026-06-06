@@ -760,9 +760,10 @@ func main() {
 	}
 	time.AfterFunc(300*time.Millisecond, updateEnvironmentExit)
 
-	exitCode, err := MainWindow{
+	mainWindow := MainWindow{
 		AssignTo:   &mw,
 		Title:      "ProxyDesk",
+		Icon:       1,
 		MinSize:    Size{Width: 1040, Height: 700},
 		Size:       Size{Width: 1180, Height: 760},
 		Font:       Font{Family: "Microsoft YaHei UI", PointSize: 9},
@@ -1135,13 +1136,107 @@ func main() {
 				},
 			},
 		},
-	}.Run()
-	if err != nil {
+	}
+	if err := mainWindow.Create(); err != nil {
 		writeStartupError(err)
 		walk.MsgBox(nil, "ProxyDesk 启动失败", err.Error(), walk.MsgBoxIconError)
 		os.Exit(1)
 	}
+
+	forceExit := false
+	trayHintShown := false
+	showMainWindow := func() {
+		if mw == nil {
+			return
+		}
+		mw.SetVisible(true)
+		_ = mw.Activate()
+	}
+	quitApp := func() {
+		forceExit = true
+		if mw != nil {
+			_ = mw.Close()
+		}
+	}
+
+	notifyIcon, err := setupTrayIcon(mw, showMainWindow, quitApp)
+	if err != nil {
+		appendLog("托盘图标初始化失败：%v", err)
+	} else {
+		defer notifyIcon.Dispose()
+		mw.Closing().Attach(func(canceled *bool, reason walk.CloseReason) {
+			if forceExit {
+				return
+			}
+			*canceled = true
+			mw.SetVisible(false)
+			if !trayHintShown {
+				trayHintShown = true
+				_ = notifyIcon.ShowInfo("ProxyDesk", "ProxyDesk 已最小化到系统托盘，右键托盘图标可以退出。")
+			}
+		})
+	}
+
+	exitCode := mw.Run()
 	os.Exit(exitCode)
+}
+
+func setupTrayIcon(mw *walk.MainWindow, showMainWindow func(), quitApp func()) (*walk.NotifyIcon, error) {
+	icon, err := walk.Resources.Icon("1")
+	if err != nil {
+		return nil, fmt.Errorf("load tray icon: %w", err)
+	}
+	notifyIcon, err := walk.NewNotifyIcon(mw)
+	if err != nil {
+		return nil, fmt.Errorf("create tray icon: %w", err)
+	}
+	if err := notifyIcon.SetIcon(icon); err != nil {
+		notifyIcon.Dispose()
+		return nil, fmt.Errorf("set tray icon: %w", err)
+	}
+	if err := notifyIcon.SetToolTip("ProxyDesk 正在运行"); err != nil {
+		notifyIcon.Dispose()
+		return nil, fmt.Errorf("set tray tooltip: %w", err)
+	}
+
+	notifyIcon.MouseUp().Attach(func(x, y int, button walk.MouseButton) {
+		if button == walk.LeftButton {
+			showMainWindow()
+		}
+	})
+
+	showAction := walk.NewAction()
+	if err := showAction.SetText("显示主窗口"); err != nil {
+		notifyIcon.Dispose()
+		return nil, fmt.Errorf("set tray show action: %w", err)
+	}
+	showAction.Triggered().Attach(showMainWindow)
+
+	exitAction := walk.NewAction()
+	if err := exitAction.SetText("退出 ProxyDesk"); err != nil {
+		notifyIcon.Dispose()
+		return nil, fmt.Errorf("set tray exit action: %w", err)
+	}
+	exitAction.Triggered().Attach(quitApp)
+
+	actions := notifyIcon.ContextMenu().Actions()
+	if err := actions.Add(showAction); err != nil {
+		notifyIcon.Dispose()
+		return nil, fmt.Errorf("add tray show action: %w", err)
+	}
+	if err := actions.Add(walk.NewSeparatorAction()); err != nil {
+		notifyIcon.Dispose()
+		return nil, fmt.Errorf("add tray separator: %w", err)
+	}
+	if err := actions.Add(exitAction); err != nil {
+		notifyIcon.Dispose()
+		return nil, fmt.Errorf("add tray exit action: %w", err)
+	}
+	if err := notifyIcon.SetVisible(true); err != nil {
+		notifyIcon.Dispose()
+		return nil, fmt.Errorf("show tray icon: %w", err)
+	}
+	return notifyIcon, nil
 }
 
 func writeStartupError(err error) {
