@@ -75,18 +75,19 @@ func main() {
 	defaultCountry := defaultCountryIndex(countries, "US")
 	filteredCountries := append([]string{}, countries...)
 	detectedLANIP := detectLANIP()
-	pageBackground := walk.RGB(241, 248, 246)
-	panelBackground := walk.RGB(252, 255, 254)
-	headerBackground := walk.RGB(218, 249, 241)
-	headerCardBackground := walk.RGB(195, 244, 230)
-	sidebarBackground := walk.RGB(12, 20, 34)
-	sidebarIdle := walk.RGB(30, 41, 59)
-	contentBackground := walk.RGB(248, 255, 252)
-	primaryText := walk.RGB(8, 35, 58)
-	mutedText := walk.RGB(90, 112, 132)
-	accentText := walk.RGB(10, 128, 115)
-	activeButton := walk.RGB(20, 184, 166)
-	secondaryButton := walk.RGB(226, 232, 240)
+	pageBackground := walk.RGB(244, 247, 249)
+	panelBackground := walk.RGB(255, 255, 255)
+	headerBackground := walk.RGB(238, 252, 248)
+	headerCardBackground := walk.RGB(255, 255, 255)
+	sidebarBackground := walk.RGB(248, 250, 252)
+	sidebarIdle := walk.RGB(255, 255, 255)
+	contentBackground := walk.RGB(250, 252, 252)
+	primaryText := walk.RGB(15, 23, 42)
+	mutedText := walk.RGB(100, 116, 139)
+	accentText := walk.RGB(13, 148, 136)
+	activeButton := walk.RGB(204, 251, 241)
+	secondaryButton := walk.RGB(255, 255, 255)
+	ctaButton := walk.RGB(20, 184, 166)
 	dangerText := walk.RGB(185, 28, 28)
 
 	var mw *walk.MainWindow
@@ -764,8 +765,11 @@ func main() {
 		Background: SolidColorBrush{Color: pageBackground},
 		Layout:     VBox{Margins: Margins{Left: 18, Top: 16, Right: 18, Bottom: 16}, Spacing: 14},
 		Children: []Widget{
-			Composite{
+			GradientComposite{
 				Background: SolidColorBrush{Color: headerBackground},
+				Color1:     headerBackground,
+				Color2:     walk.RGB(250, 255, 253),
+				Vertical:   false,
 				Layout:     VBox{Margins: Margins{Left: 22, Top: 16, Right: 22, Bottom: 14}, Spacing: 10},
 				Children: []Widget{
 					Composite{
@@ -861,15 +865,15 @@ func main() {
 						Background: SolidColorBrush{Color: sidebarBackground},
 						Layout:     VBox{Margins: Margins{Left: 12, Top: 18, Right: 12, Bottom: 18}, Spacing: 10},
 						Children: []Widget{
-							Label{Text: "ProxyDesk", Font: Font{Family: "Microsoft YaHei UI", PointSize: 12, Bold: true}, TextColor: walk.RGB(236, 253, 245)},
-							Label{Text: "端口转发控制台", TextColor: walk.RGB(148, 163, 184)},
+							Label{Text: "ProxyDesk", Font: Font{Family: "Microsoft YaHei UI", PointSize: 12, Bold: true}, TextColor: primaryText},
+							Label{Text: "端口转发控制台", TextColor: mutedText},
 							VSpacer{Size: 12},
 							PushButton{AssignTo: &navDashboardBtn, Text: "概览", MinSize: Size{Height: 38}, Background: SolidColorBrush{Color: activeButton}, OnClicked: openPage(0)},
 							PushButton{AssignTo: &navConfigBtn, Text: "线路配置", MinSize: Size{Height: 38}, Background: SolidColorBrush{Color: sidebarIdle}, OnClicked: openPage(1)},
 							PushButton{AssignTo: &navRouteBtn, Text: "转发列表", MinSize: Size{Height: 38}, Background: SolidColorBrush{Color: sidebarIdle}, OnClicked: openPage(2)},
 							PushButton{AssignTo: &navSettingsBtn, Text: "设置", MinSize: Size{Height: 38}, Background: SolidColorBrush{Color: sidebarIdle}, OnClicked: openPage(3)},
 							VSpacer{},
-							Label{Text: "实际国家看出口检测", TextColor: walk.RGB(148, 163, 184)},
+							Label{Text: "实际国家看出口检测", TextColor: mutedText},
 						},
 					},
 					Composite{
@@ -909,7 +913,7 @@ func main() {
 											Composite{
 												Layout: HBox{MarginsZero: true, Spacing: 8},
 												Children: []Widget{
-													PushButton{Text: "开启系统代理", MinSize: Size{Width: 130, Height: 34}, Background: SolidColorBrush{Color: activeButton}, OnClicked: enableSystemProxy},
+													PushButton{Text: "开启系统代理", MinSize: Size{Width: 130, Height: 34}, Background: SolidColorBrush{Color: ctaButton}, OnClicked: enableSystemProxy},
 													PushButton{Text: "关闭系统代理", MinSize: Size{Width: 130, Height: 32}, OnClicked: disableSystemProxy},
 													HSpacer{},
 												},
@@ -957,7 +961,7 @@ func main() {
 											Composite{
 												Layout: HBox{MarginsZero: true, Spacing: 8},
 												Children: []Widget{
-													PushButton{Text: "新增配置", MinSize: Size{Width: 100, Height: 34}, Background: SolidColorBrush{Color: activeButton}, OnClicked: addRoute},
+													PushButton{Text: "新增配置", MinSize: Size{Width: 100, Height: 34}, Background: SolidColorBrush{Color: ctaButton}, OnClicked: addRoute},
 													HSpacer{},
 												},
 											},
@@ -985,7 +989,7 @@ func main() {
 											Composite{
 												Layout: HBox{MarginsZero: true, Spacing: 8},
 												Children: []Widget{
-													PushButton{Text: "启动选中", MinSize: Size{Width: 110, Height: 32}, Background: SolidColorBrush{Color: activeButton}, OnClicked: startRoute},
+													PushButton{Text: "启动选中", MinSize: Size{Width: 110, Height: 32}, Background: SolidColorBrush{Color: ctaButton}, OnClicked: startRoute},
 													PushButton{Text: "停止选中", MinSize: Size{Width: 110, Height: 30}, OnClicked: stopRoute},
 													PushButton{Text: "测试选中出口", MinSize: Size{Width: 120, Height: 30}, OnClicked: testExitIP},
 													PushButton{Text: "删除选中", MinSize: Size{Width: 110, Height: 30}, OnClicked: deleteRoute},
@@ -1006,7 +1010,7 @@ func main() {
 										MinSize:    Size{Width: 150, Height: 420},
 										MaxSize:    Size{Width: 150},
 										Layout:     VBox{Margins: Margins{Left: 12, Top: 14, Right: 12, Bottom: 14}, Spacing: 10},
-										Background: SolidColorBrush{Color: headerBackground},
+										Background: SolidColorBrush{Color: panelBackground},
 										Children: []Widget{
 											Label{Text: "设置模块", Font: Font{Family: "Microsoft YaHei UI", PointSize: 10, Bold: true}, TextColor: primaryText},
 											PushButton{AssignTo: &settingsPortBtn, Text: "端口范围", MinSize: Size{Height: 36}, Background: SolidColorBrush{Color: activeButton}, OnClicked: openSettingsSection(0)},
@@ -1024,11 +1028,11 @@ func main() {
 												AssignTo: &settingsPortPage,
 												Layout:   VBox{MarginsZero: true, Spacing: 10},
 												Children: []Widget{
-													GroupBox{
-														Title:      "端口范围",
+													Composite{
 														Layout:     VBox{Margins: Margins{Left: 14, Top: 12, Right: 14, Bottom: 12}, Spacing: 10},
 														Background: SolidColorBrush{Color: panelBackground},
 														Children: []Widget{
+															Label{Text: "端口范围", Font: Font{Family: "Microsoft YaHei UI", PointSize: 10, Bold: true}, TextColor: primaryText},
 															Composite{
 																Layout: Grid{Columns: 2, MarginsZero: true, Spacing: 8},
 																Children: []Widget{
@@ -1049,11 +1053,11 @@ func main() {
 												Visible:  false,
 												Layout:   VBox{MarginsZero: true, Spacing: 10},
 												Children: []Widget{
-													GroupBox{
-														Title:      "供应商 API",
+													Composite{
 														Layout:     VBox{Margins: Margins{Left: 14, Top: 12, Right: 14, Bottom: 12}, Spacing: 10},
 														Background: SolidColorBrush{Color: panelBackground},
 														Children: []Widget{
+															Label{Text: "供应商 API", Font: Font{Family: "Microsoft YaHei UI", PointSize: 10, Bold: true}, TextColor: primaryText},
 															Composite{
 																Layout: Grid{Columns: 2, MarginsZero: true, Spacing: 8},
 																Children: []Widget{
@@ -1079,7 +1083,7 @@ func main() {
 																Layout: HBox{MarginsZero: true},
 																Children: []Widget{
 																	HSpacer{},
-																	PushButton{Text: "按国家获取 IP", MinSize: Size{Width: 150, Height: 34}, Background: SolidColorBrush{Color: activeButton}, OnClicked: fetchAPI},
+																	PushButton{Text: "按国家获取 IP", MinSize: Size{Width: 150, Height: 34}, Background: SolidColorBrush{Color: ctaButton}, OnClicked: fetchAPI},
 																},
 															},
 														},
@@ -1092,11 +1096,11 @@ func main() {
 												Visible:  false,
 												Layout:   VBox{MarginsZero: true, Spacing: 10},
 												Children: []Widget{
-													GroupBox{
-														Title:      "运行日志",
+													Composite{
 														Layout:     VBox{Margins: Margins{Left: 14, Top: 12, Right: 14, Bottom: 12}, Spacing: 8},
 														Background: SolidColorBrush{Color: panelBackground},
 														Children: []Widget{
+															Label{Text: "运行日志", Font: Font{Family: "Microsoft YaHei UI", PointSize: 10, Bold: true}, TextColor: primaryText},
 															Composite{
 																Layout: HBox{MarginsZero: true},
 																Children: []Widget{
