@@ -19,8 +19,10 @@ jobs:
       - name: Download dependencies
         run: go mod tidy
 
-      - name: Embed Windows manifest
-        run: go run github.com/akavel/rsrc@v0.10.2 -manifest build/windows/ProxyDesk.exe.manifest -o cmd/proxydesk/rsrc.syso
+      - name: Embed Windows resources
+        run: |
+          go run github.com/akavel/rsrc@v0.10.2 -manifest build/windows/ProxyDesk.exe.manifest -ico build/windows/ProxyDesk.ico -o cmd/proxydesk/rsrc.syso
+          go run ./build/tools/fix_icon_group.go cmd/proxydesk/rsrc.syso
 
       - name: Build Windows exe
         run: go build -ldflags="-H windowsgui -s -w" -o dist/ProxyDesk.exe ./cmd/proxydesk
