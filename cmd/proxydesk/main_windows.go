@@ -80,13 +80,11 @@ func main() {
 	headerBackground := walk.RGB(238, 252, 248)
 	headerCardBackground := walk.RGB(255, 255, 255)
 	sidebarBackground := walk.RGB(248, 250, 252)
-	sidebarIdle := walk.RGB(255, 255, 255)
 	contentBackground := walk.RGB(250, 252, 252)
 	primaryText := walk.RGB(15, 23, 42)
 	mutedText := walk.RGB(100, 116, 139)
 	accentText := walk.RGB(13, 148, 136)
 	activeButton := walk.RGB(204, 251, 241)
-	secondaryButton := walk.RGB(255, 255, 255)
 	ctaButton := walk.RGB(20, 184, 166)
 	dangerText := walk.RGB(185, 28, 28)
 
@@ -99,12 +97,14 @@ func main() {
 	var contentTitle *walk.Label
 	var dashboardPage, configPage, routePage, settingsPage *walk.Composite
 	var settingsPortPage, settingsAPIPage, settingsLogPage *walk.Composite
-	var navDashboardBtn, navConfigBtn, navRouteBtn, navSettingsBtn *walk.PushButton
-	var settingsPortBtn, settingsAPIBtn, settingsLogBtn *walk.PushButton
+	var navDashboardBtn, navConfigBtn, navRouteBtn, navSettingsBtn *walk.CustomWidget
+	var settingsPortBtn, settingsAPIBtn, settingsLogBtn *walk.CustomWidget
 	var statusLabel, exitIPLabel, upstreamLabel, errorLabel, localProtocolLabel, upstreamProtocolLabel *walk.Label
 	var envExitLabel, localIPLabel *walk.Label
 	var actualExitLabel *walk.Label
 	loadingRoute := false
+	currentPage := 0
+	currentSettingsSection := 0
 
 	appendLogDirect := func(format string, args ...any) {
 		if logBox == nil {
@@ -672,36 +672,81 @@ func main() {
 			_ = logBox.SetText("")
 		}
 	}
-	setButtonBackground := func(button *walk.PushButton, color walk.Color) {
-		if button == nil {
-			return
+	repaintButtons := func(buttons ...*walk.CustomWidget) {
+		for _, button := range buttons {
+			if button != nil {
+				_ = button.Invalidate()
+			}
 		}
-		brush, err := walk.NewSolidColorBrush(color)
-		if err != nil {
-			return
+	}
+	roundedButton := func(assignTo **walk.CustomWidget, text string, width, height int, selected func() bool, primary bool, onClick func()) Widget {
+		return CustomWidget{
+			AssignTo:            assignTo,
+			MinSize:             Size{Width: width, Height: height},
+			ClearsBackground:    true,
+			InvalidatesOnResize: true,
+			PaintMode:           PaintBuffered,
+			PaintPixels: func(canvas *walk.Canvas, _ walk.Rectangle) error {
+				bounds := canvas.BoundsPixels()
+				bg := walk.RGB(255, 255, 255)
+				border := walk.RGB(226, 232, 240)
+				textColor := primaryText
+				if selected != nil && selected() {
+					bg = activeButton
+					border = walk.RGB(94, 234, 212)
+					textColor = walk.RGB(15, 118, 110)
+				}
+				if primary {
+					bg = ctaButton
+					border = ctaButton
+					textColor = walk.RGB(255, 255, 255)
+				}
+				brush, err := walk.NewSolidColorBrush(bg)
+				if err != nil {
+					return err
+				}
+				defer brush.Dispose()
+				pen, err := walk.NewCosmeticPen(walk.PenSolid, border)
+				if err != nil {
+					return err
+				}
+				defer pen.Dispose()
+				rect := walk.Rectangle{X: 1, Y: 1, Width: bounds.Width - 2, Height: bounds.Height - 2}
+				radius := walk.Size{Width: 14, Height: 14}
+				if err := canvas.FillRoundedRectanglePixels(brush, rect, radius); err != nil {
+					return err
+				}
+				if err := canvas.DrawRoundedRectanglePixels(pen, rect, radius); err != nil {
+					return err
+				}
+				var font *walk.Font
+				if mw != nil {
+					font = mw.Font()
+				}
+				return canvas.DrawTextPixels(text, font, textColor, bounds, walk.TextCenter|walk.TextVCenter|walk.TextSingleLine|walk.TextEndEllipsis)
+			},
+			OnMouseUp: func(x, y int, button walk.MouseButton) {
+				if button != walk.LeftButton || onClick == nil {
+					return
+				}
+				onClick()
+			},
 		}
-		button.SetBackground(brush)
 	}
 	pageNames := []string{"工作台", "线路配置", "转发列表", "设置"}
 	openPage := func(index int) func() {
 		return func() {
 			pages := []*walk.Composite{dashboardPage, configPage, routePage, settingsPage}
-			buttons := []*walk.PushButton{navDashboardBtn, navConfigBtn, navRouteBtn, navSettingsBtn}
 			if index < 0 || index >= len(pages) {
 				return
 			}
+			currentPage = index
 			for i, page := range pages {
 				if page != nil {
 					page.SetVisible(i == index)
 				}
-				if i < len(buttons) && buttons[i] != nil {
-					if i == index {
-						setButtonBackground(buttons[i], activeButton)
-						continue
-					}
-					setButtonBackground(buttons[i], sidebarIdle)
-				}
 			}
+			repaintButtons(navDashboardBtn, navConfigBtn, navRouteBtn, navSettingsBtn)
 			if contentTitle != nil {
 				_ = contentTitle.SetText(pageNames[index])
 			}
@@ -710,22 +755,16 @@ func main() {
 	openSettingsSection := func(index int) func() {
 		return func() {
 			pages := []*walk.Composite{settingsPortPage, settingsAPIPage, settingsLogPage}
-			buttons := []*walk.PushButton{settingsPortBtn, settingsAPIBtn, settingsLogBtn}
 			if index < 0 || index >= len(pages) {
 				return
 			}
+			currentSettingsSection = index
 			for i, page := range pages {
 				if page != nil {
 					page.SetVisible(i == index)
 				}
-				if i < len(buttons) && buttons[i] != nil {
-					if i == index {
-						setButtonBackground(buttons[i], activeButton)
-						continue
-					}
-					setButtonBackground(buttons[i], secondaryButton)
-				}
 			}
+			repaintButtons(settingsPortBtn, settingsAPIBtn, settingsLogBtn)
 		}
 	}
 	updateEnvironmentExit := func() {
@@ -868,10 +907,10 @@ func main() {
 							Label{Text: "ProxyDesk", Font: Font{Family: "Microsoft YaHei UI", PointSize: 12, Bold: true}, TextColor: primaryText},
 							Label{Text: "端口转发控制台", TextColor: mutedText},
 							VSpacer{Size: 12},
-							PushButton{AssignTo: &navDashboardBtn, Text: "概览", MinSize: Size{Height: 38}, Background: SolidColorBrush{Color: activeButton}, OnClicked: openPage(0)},
-							PushButton{AssignTo: &navConfigBtn, Text: "线路配置", MinSize: Size{Height: 38}, Background: SolidColorBrush{Color: sidebarIdle}, OnClicked: openPage(1)},
-							PushButton{AssignTo: &navRouteBtn, Text: "转发列表", MinSize: Size{Height: 38}, Background: SolidColorBrush{Color: sidebarIdle}, OnClicked: openPage(2)},
-							PushButton{AssignTo: &navSettingsBtn, Text: "设置", MinSize: Size{Height: 38}, Background: SolidColorBrush{Color: sidebarIdle}, OnClicked: openPage(3)},
+							roundedButton(&navDashboardBtn, "概览", 128, 38, func() bool { return currentPage == 0 }, false, openPage(0)),
+							roundedButton(&navConfigBtn, "线路配置", 128, 38, func() bool { return currentPage == 1 }, false, openPage(1)),
+							roundedButton(&navRouteBtn, "转发列表", 128, 38, func() bool { return currentPage == 2 }, false, openPage(2)),
+							roundedButton(&navSettingsBtn, "设置", 128, 38, func() bool { return currentPage == 3 }, false, openPage(3)),
 							VSpacer{},
 							Label{Text: "实际国家看出口检测", TextColor: mutedText},
 						},
@@ -913,8 +952,8 @@ func main() {
 											Composite{
 												Layout: HBox{MarginsZero: true, Spacing: 8},
 												Children: []Widget{
-													PushButton{Text: "开启系统代理", MinSize: Size{Width: 130, Height: 34}, Background: SolidColorBrush{Color: ctaButton}, OnClicked: enableSystemProxy},
-													PushButton{Text: "关闭系统代理", MinSize: Size{Width: 130, Height: 32}, OnClicked: disableSystemProxy},
+													roundedButton(nil, "开启系统代理", 130, 34, nil, true, enableSystemProxy),
+													roundedButton(nil, "关闭系统代理", 130, 34, nil, false, disableSystemProxy),
 													HSpacer{},
 												},
 											},
@@ -961,7 +1000,7 @@ func main() {
 											Composite{
 												Layout: HBox{MarginsZero: true, Spacing: 8},
 												Children: []Widget{
-													PushButton{Text: "新增配置", MinSize: Size{Width: 100, Height: 34}, Background: SolidColorBrush{Color: ctaButton}, OnClicked: addRoute},
+													roundedButton(nil, "新增配置", 100, 34, nil, true, addRoute),
 													HSpacer{},
 												},
 											},
@@ -989,11 +1028,11 @@ func main() {
 											Composite{
 												Layout: HBox{MarginsZero: true, Spacing: 8},
 												Children: []Widget{
-													PushButton{Text: "启动选中", MinSize: Size{Width: 110, Height: 32}, Background: SolidColorBrush{Color: ctaButton}, OnClicked: startRoute},
-													PushButton{Text: "停止选中", MinSize: Size{Width: 110, Height: 30}, OnClicked: stopRoute},
-													PushButton{Text: "测试选中出口", MinSize: Size{Width: 120, Height: 30}, OnClicked: testExitIP},
-													PushButton{Text: "删除选中", MinSize: Size{Width: 110, Height: 30}, OnClicked: deleteRoute},
-													PushButton{Text: "停止全部", MinSize: Size{Width: 110, Height: 30}, OnClicked: stopAllRoutes},
+													roundedButton(nil, "启动选中", 110, 32, nil, true, startRoute),
+													roundedButton(nil, "停止选中", 110, 32, nil, false, stopRoute),
+													roundedButton(nil, "测试选中出口", 120, 32, nil, false, testExitIP),
+													roundedButton(nil, "删除选中", 110, 32, nil, false, deleteRoute),
+													roundedButton(nil, "停止全部", 110, 32, nil, false, stopAllRoutes),
 													HSpacer{},
 												},
 											},
@@ -1013,9 +1052,9 @@ func main() {
 										Background: SolidColorBrush{Color: panelBackground},
 										Children: []Widget{
 											Label{Text: "设置模块", Font: Font{Family: "Microsoft YaHei UI", PointSize: 10, Bold: true}, TextColor: primaryText},
-											PushButton{AssignTo: &settingsPortBtn, Text: "端口范围", MinSize: Size{Height: 36}, Background: SolidColorBrush{Color: activeButton}, OnClicked: openSettingsSection(0)},
-											PushButton{AssignTo: &settingsAPIBtn, Text: "供应商 API", MinSize: Size{Height: 36}, Background: SolidColorBrush{Color: secondaryButton}, OnClicked: openSettingsSection(1)},
-											PushButton{AssignTo: &settingsLogBtn, Text: "运行日志", MinSize: Size{Height: 36}, Background: SolidColorBrush{Color: secondaryButton}, OnClicked: openSettingsSection(2)},
+											roundedButton(&settingsPortBtn, "端口范围", 126, 36, func() bool { return currentSettingsSection == 0 }, false, openSettingsSection(0)),
+											roundedButton(&settingsAPIBtn, "供应商 API", 126, 36, func() bool { return currentSettingsSection == 1 }, false, openSettingsSection(1)),
+											roundedButton(&settingsLogBtn, "运行日志", 126, 36, func() bool { return currentSettingsSection == 2 }, false, openSettingsSection(2)),
 											VSpacer{},
 											Label{Text: "端口和 API 共用同一个可用端口池。", TextColor: accentText},
 										},
@@ -1083,7 +1122,7 @@ func main() {
 																Layout: HBox{MarginsZero: true},
 																Children: []Widget{
 																	HSpacer{},
-																	PushButton{Text: "按国家获取 IP", MinSize: Size{Width: 150, Height: 34}, Background: SolidColorBrush{Color: ctaButton}, OnClicked: fetchAPI},
+																	roundedButton(nil, "按国家获取 IP", 150, 34, nil, true, fetchAPI),
 																},
 															},
 														},
@@ -1106,7 +1145,7 @@ func main() {
 																Children: []Widget{
 																	Label{Text: "运行日志会自动滚动到底部，可手动滑动查看历史。", TextColor: accentText},
 																	HSpacer{},
-																	PushButton{Text: "清理日志", MinSize: Size{Width: 100, Height: 28}, OnClicked: clearLogs},
+																	roundedButton(nil, "清理日志", 100, 30, nil, false, clearLogs),
 																},
 															},
 															TextEdit{
