@@ -27,10 +27,10 @@ func main() {
 	images := make([][]byte, 0, len(sizes))
 	for _, size := range sizes {
 		img := renderIcon(size)
-		var buf bytes.Buffer
-		must(png.Encode(&buf, img))
-		images = append(images, buf.Bytes())
+		images = append(images, encodeDIB(img))
 		if size == 256 {
+			var buf bytes.Buffer
+			must(png.Encode(&buf, img))
 			must(os.WriteFile(filepath.Join(outDir, "ProxyDesk.png"), buf.Bytes(), 0644))
 		}
 	}
@@ -184,6 +184,39 @@ func writeICO(path string, sizes []int, images [][]byte) error {
 		buf.Write(img)
 	}
 	return os.WriteFile(path, buf.Bytes(), 0644)
+}
+
+func encodeDIB(img *image.RGBA) []byte {
+	width := img.Bounds().Dx()
+	height := img.Bounds().Dy()
+	pixelBytes := width * height * 4
+	maskStride := ((width + 31) / 32) * 4
+	maskBytes := maskStride * height
+
+	var buf bytes.Buffer
+	binary.Write(&buf, binary.LittleEndian, uint32(40))
+	binary.Write(&buf, binary.LittleEndian, int32(width))
+	binary.Write(&buf, binary.LittleEndian, int32(height*2))
+	binary.Write(&buf, binary.LittleEndian, uint16(1))
+	binary.Write(&buf, binary.LittleEndian, uint16(32))
+	binary.Write(&buf, binary.LittleEndian, uint32(0))
+	binary.Write(&buf, binary.LittleEndian, uint32(pixelBytes))
+	binary.Write(&buf, binary.LittleEndian, int32(0))
+	binary.Write(&buf, binary.LittleEndian, int32(0))
+	binary.Write(&buf, binary.LittleEndian, uint32(0))
+	binary.Write(&buf, binary.LittleEndian, uint32(0))
+
+	for y := height - 1; y >= 0; y-- {
+		for x := 0; x < width; x++ {
+			c := img.RGBAAt(x, y)
+			buf.WriteByte(c.B)
+			buf.WriteByte(c.G)
+			buf.WriteByte(c.R)
+			buf.WriteByte(c.A)
+		}
+	}
+	buf.Write(make([]byte, maskBytes))
+	return buf.Bytes()
 }
 
 func mix(a, b color.RGBA, t float64) color.RGBA {
