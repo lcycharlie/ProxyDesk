@@ -75,6 +75,19 @@ func main() {
 	defaultCountry := defaultCountryIndex(countries, "US")
 	filteredCountries := append([]string{}, countries...)
 	detectedLANIP := detectLANIP()
+	pageBackground := walk.RGB(241, 248, 246)
+	panelBackground := walk.RGB(252, 255, 254)
+	headerBackground := walk.RGB(218, 249, 241)
+	headerCardBackground := walk.RGB(195, 244, 230)
+	sidebarBackground := walk.RGB(12, 20, 34)
+	sidebarIdle := walk.RGB(30, 41, 59)
+	contentBackground := walk.RGB(248, 255, 252)
+	primaryText := walk.RGB(8, 35, 58)
+	mutedText := walk.RGB(90, 112, 132)
+	accentText := walk.RGB(10, 128, 115)
+	activeButton := walk.RGB(20, 184, 166)
+	secondaryButton := walk.RGB(226, 232, 240)
+	dangerText := walk.RGB(185, 28, 28)
 
 	var mw *walk.MainWindow
 	var countryCB, localProtocolCB, protocolCB, portCB *walk.ComboBox
@@ -85,6 +98,8 @@ func main() {
 	var contentTitle *walk.Label
 	var dashboardPage, configPage, routePage, settingsPage *walk.Composite
 	var settingsPortPage, settingsAPIPage, settingsLogPage *walk.Composite
+	var navDashboardBtn, navConfigBtn, navRouteBtn, navSettingsBtn *walk.PushButton
+	var settingsPortBtn, settingsAPIBtn, settingsLogBtn *walk.PushButton
 	var statusLabel, exitIPLabel, upstreamLabel, errorLabel, localProtocolLabel, upstreamProtocolLabel *walk.Label
 	var envExitLabel, localIPLabel *walk.Label
 	var actualExitLabel *walk.Label
@@ -656,16 +671,34 @@ func main() {
 			_ = logBox.SetText("")
 		}
 	}
+	setButtonBackground := func(button *walk.PushButton, color walk.Color) {
+		if button == nil {
+			return
+		}
+		brush, err := walk.NewSolidColorBrush(color)
+		if err != nil {
+			return
+		}
+		button.SetBackground(brush)
+	}
 	pageNames := []string{"工作台", "线路配置", "转发列表", "设置"}
 	openPage := func(index int) func() {
 		return func() {
 			pages := []*walk.Composite{dashboardPage, configPage, routePage, settingsPage}
+			buttons := []*walk.PushButton{navDashboardBtn, navConfigBtn, navRouteBtn, navSettingsBtn}
 			if index < 0 || index >= len(pages) {
 				return
 			}
 			for i, page := range pages {
 				if page != nil {
 					page.SetVisible(i == index)
+				}
+				if i < len(buttons) && buttons[i] != nil {
+					if i == index {
+						setButtonBackground(buttons[i], activeButton)
+						continue
+					}
+					setButtonBackground(buttons[i], sidebarIdle)
 				}
 			}
 			if contentTitle != nil {
@@ -676,12 +709,20 @@ func main() {
 	openSettingsSection := func(index int) func() {
 		return func() {
 			pages := []*walk.Composite{settingsPortPage, settingsAPIPage, settingsLogPage}
+			buttons := []*walk.PushButton{settingsPortBtn, settingsAPIBtn, settingsLogBtn}
 			if index < 0 || index >= len(pages) {
 				return
 			}
 			for i, page := range pages {
 				if page != nil {
 					page.SetVisible(i == index)
+				}
+				if i < len(buttons) && buttons[i] != nil {
+					if i == index {
+						setButtonBackground(buttons[i], activeButton)
+						continue
+					}
+					setButtonBackground(buttons[i], secondaryButton)
 				}
 			}
 		}
@@ -720,15 +761,15 @@ func main() {
 		MinSize:    Size{Width: 1040, Height: 700},
 		Size:       Size{Width: 1180, Height: 760},
 		Font:       Font{Family: "Microsoft YaHei UI", PointSize: 9},
-		Background: SolidColorBrush{Color: walk.RGB(237, 252, 247)},
-		Layout:     VBox{Margins: Margins{Left: 18, Top: 16, Right: 18, Bottom: 16}, Spacing: 12},
+		Background: SolidColorBrush{Color: pageBackground},
+		Layout:     VBox{Margins: Margins{Left: 18, Top: 16, Right: 18, Bottom: 16}, Spacing: 14},
 		Children: []Widget{
 			Composite{
-				Background: SolidColorBrush{Color: walk.RGB(223, 249, 241)},
-				Layout:     VBox{Margins: Margins{Left: 22, Top: 16, Right: 22, Bottom: 16}, Spacing: 8},
+				Background: SolidColorBrush{Color: headerBackground},
+				Layout:     VBox{Margins: Margins{Left: 22, Top: 16, Right: 22, Bottom: 14}, Spacing: 10},
 				Children: []Widget{
 					Composite{
-						Layout: HBox{MarginsZero: true, Spacing: 12},
+						Layout: HBox{MarginsZero: true, Spacing: 14},
 						Children: []Widget{
 							Composite{
 								Layout: VBox{MarginsZero: true, Spacing: 2},
@@ -736,11 +777,11 @@ func main() {
 									Label{
 										Text:      "ProxyDesk",
 										Font:      Font{Family: "Microsoft YaHei UI", PointSize: 18, Bold: true},
-										TextColor: walk.RGB(11, 47, 71),
+										TextColor: primaryText,
 									},
 									Label{
 										Text:      "国家住宅 IP 本地端口转发器",
-										TextColor: walk.RGB(37, 99, 105),
+										TextColor: mutedText,
 									},
 								},
 							},
@@ -749,12 +790,12 @@ func main() {
 								MinSize:    Size{Width: 230, Height: 56},
 								MaxSize:    Size{Width: 230, Height: 56},
 								Layout:     VBox{Margins: Margins{Left: 14, Top: 8, Right: 14, Bottom: 8}, Spacing: 2},
-								Background: SolidColorBrush{Color: walk.RGB(202, 245, 233)},
+								Background: SolidColorBrush{Color: headerCardBackground},
 								Children: []Widget{
 									Composite{
 										Layout: HBox{MarginsZero: true, Spacing: 6},
 										Children: []Widget{
-											Label{Text: "当前环境出口", TextColor: walk.RGB(15, 94, 91)},
+											Label{Text: "当前环境出口", TextColor: mutedText},
 											HSpacer{},
 											LinkLabel{
 												Text:    `<a id="refresh">↻</a>`,
@@ -769,7 +810,7 @@ func main() {
 										AssignTo:     &envExitLabel,
 										Text:         "检测中...",
 										Font:         Font{Family: "Consolas", PointSize: 12, Bold: true},
-										TextColor:    walk.RGB(14, 116, 101),
+										TextColor:    accentText,
 										EllipsisMode: EllipsisEnd,
 									},
 								},
@@ -778,55 +819,55 @@ func main() {
 								MinSize:    Size{Width: 230, Height: 56},
 								MaxSize:    Size{Width: 230, Height: 56},
 								Layout:     VBox{Margins: Margins{Left: 14, Top: 8, Right: 14, Bottom: 8}, Spacing: 2},
-								Background: SolidColorBrush{Color: walk.RGB(202, 245, 233)},
+								Background: SolidColorBrush{Color: headerCardBackground},
 								Children: []Widget{
-									Label{Text: "本地 IP", TextColor: walk.RGB(15, 94, 91)},
+									Label{Text: "本地 IP", TextColor: mutedText},
 									Label{
 										AssignTo:  &localIPLabel,
 										Text:      detectedLANIP,
 										Font:      Font{Family: "Consolas", PointSize: 12, Bold: true},
-										TextColor: walk.RGB(14, 116, 101),
+										TextColor: accentText,
 									},
 								},
 							},
 						},
 					},
 					Composite{
-						Layout: HBox{MarginsZero: true, Spacing: 14},
+						Layout: HBox{MarginsZero: true, Spacing: 16},
 						Children: []Widget{
-							Label{Text: "状态"},
+							Label{Text: "状态", TextColor: mutedText},
 							Label{
 								AssignTo:  &statusLabel,
 								Text:      "未启动",
 								Font:      Font{Family: "Microsoft YaHei UI", PointSize: 10, Bold: true},
 								TextColor: walk.RGB(123, 94, 0),
 							},
-							Label{Text: "出口 IP"},
-							Label{AssignTo: &exitIPLabel, Text: "-", TextColor: walk.RGB(14, 116, 101)},
-							Label{Text: "运行本地协议"},
-							Label{AssignTo: &localProtocolLabel, Text: "HTTP/HTTPS", TextColor: walk.RGB(14, 116, 101)},
-							Label{Text: "运行上游协议"},
-							Label{AssignTo: &upstreamProtocolLabel, Text: "HTTP", TextColor: walk.RGB(14, 116, 101)},
+							Label{Text: "出口 IP", TextColor: mutedText},
+							Label{AssignTo: &exitIPLabel, Text: "-", TextColor: accentText},
+							Label{Text: "运行本地协议", TextColor: mutedText},
+							Label{AssignTo: &localProtocolLabel, Text: "HTTP/HTTPS", TextColor: accentText},
+							Label{Text: "运行上游协议", TextColor: mutedText},
+							Label{AssignTo: &upstreamProtocolLabel, Text: "HTTP", TextColor: accentText},
 						},
 					},
 				},
 			},
 			Composite{
-				Layout: HBox{MarginsZero: true, Spacing: 0},
+				Layout: HBox{MarginsZero: true, Spacing: 12},
 				Children: []Widget{
 					Composite{
-						MinSize:    Size{Width: 154, Height: 520},
-						MaxSize:    Size{Width: 154},
-						Background: SolidColorBrush{Color: walk.RGB(18, 27, 43)},
+						MinSize:    Size{Width: 164, Height: 520},
+						MaxSize:    Size{Width: 164},
+						Background: SolidColorBrush{Color: sidebarBackground},
 						Layout:     VBox{Margins: Margins{Left: 12, Top: 18, Right: 12, Bottom: 18}, Spacing: 10},
 						Children: []Widget{
 							Label{Text: "ProxyDesk", Font: Font{Family: "Microsoft YaHei UI", PointSize: 12, Bold: true}, TextColor: walk.RGB(236, 253, 245)},
-							Label{Text: "端口转发", TextColor: walk.RGB(148, 163, 184)},
-							VSpacer{Size: 8},
-							PushButton{Text: "概览", MinSize: Size{Height: 34}, Background: SolidColorBrush{Color: walk.RGB(35, 180, 150)}, OnClicked: openPage(0)},
-							PushButton{Text: "线路配置", MinSize: Size{Height: 34}, OnClicked: openPage(1)},
-							PushButton{Text: "转发列表", MinSize: Size{Height: 34}, OnClicked: openPage(2)},
-							PushButton{Text: "设置", MinSize: Size{Height: 34}, OnClicked: openPage(3)},
+							Label{Text: "端口转发控制台", TextColor: walk.RGB(148, 163, 184)},
+							VSpacer{Size: 12},
+							PushButton{AssignTo: &navDashboardBtn, Text: "概览", MinSize: Size{Height: 38}, Background: SolidColorBrush{Color: activeButton}, OnClicked: openPage(0)},
+							PushButton{AssignTo: &navConfigBtn, Text: "线路配置", MinSize: Size{Height: 38}, Background: SolidColorBrush{Color: sidebarIdle}, OnClicked: openPage(1)},
+							PushButton{AssignTo: &navRouteBtn, Text: "转发列表", MinSize: Size{Height: 38}, Background: SolidColorBrush{Color: sidebarIdle}, OnClicked: openPage(2)},
+							PushButton{AssignTo: &navSettingsBtn, Text: "设置", MinSize: Size{Height: 38}, Background: SolidColorBrush{Color: sidebarIdle}, OnClicked: openPage(3)},
 							VSpacer{},
 							Label{Text: "实际国家看出口检测", TextColor: walk.RGB(148, 163, 184)},
 						},
@@ -834,10 +875,10 @@ func main() {
 					Composite{
 						MinSize:       Size{Width: 760, Height: 520},
 						StretchFactor: 1,
-						Background:    SolidColorBrush{Color: walk.RGB(247, 255, 252)},
-						Layout:        VBox{Margins: Margins{Left: 12, Top: 10, Right: 12, Bottom: 10}, Spacing: 8},
+						Background:    SolidColorBrush{Color: contentBackground},
+						Layout:        VBox{Margins: Margins{Left: 16, Top: 14, Right: 16, Bottom: 14}, Spacing: 12},
 						Children: []Widget{
-							Label{AssignTo: &contentTitle, Text: "工作台", Font: Font{Family: "Microsoft YaHei UI", PointSize: 13, Bold: true}, TextColor: walk.RGB(11, 47, 71)},
+							Label{AssignTo: &contentTitle, Text: "工作台", Font: Font{Family: "Microsoft YaHei UI", PointSize: 15, Bold: true}, TextColor: primaryText},
 							Composite{
 								AssignTo: &dashboardPage,
 								Layout:   VBox{Margins: Margins{Left: 12, Top: 12, Right: 12, Bottom: 12}, Spacing: 12},
@@ -845,25 +886,30 @@ func main() {
 									GroupBox{
 										Title:      "当前连接",
 										Layout:     VBox{Margins: Margins{Left: 16, Top: 12, Right: 16, Bottom: 12}, Spacing: 10},
-										Background: SolidColorBrush{Color: walk.RGB(250, 255, 253)},
+										Background: SolidColorBrush{Color: panelBackground},
 										Children: []Widget{
 											Composite{
 												Layout: Grid{Columns: 2, MarginsZero: true, Spacing: 8},
 												Children: []Widget{
-													Label{Text: "实际出口", TextColor: walk.RGB(71, 85, 105)},
-													Label{AssignTo: &actualExitLabel, Text: "-", TextColor: walk.RGB(15, 118, 110), EllipsisMode: EllipsisEnd},
-													Label{Text: "上游代理", TextColor: walk.RGB(71, 85, 105)},
-													Label{AssignTo: &upstreamLabel, Text: "-", TextColor: walk.RGB(15, 23, 42), EllipsisMode: EllipsisEnd},
-													Label{Text: "最近错误", TextColor: walk.RGB(71, 85, 105)},
-													Label{AssignTo: &errorLabel, Text: "-", TextColor: walk.RGB(185, 28, 28), EllipsisMode: EllipsisEnd},
+													Label{Text: "实际出口", TextColor: mutedText},
+													Label{AssignTo: &actualExitLabel, Text: "-", TextColor: accentText, EllipsisMode: EllipsisEnd},
+													Label{Text: "上游代理", TextColor: mutedText},
+													Label{AssignTo: &upstreamLabel, Text: "-", TextColor: primaryText, EllipsisMode: EllipsisEnd},
+													Label{Text: "最近错误", TextColor: mutedText},
+													Label{AssignTo: &errorLabel, Text: "-", TextColor: dangerText, EllipsisMode: EllipsisEnd},
 												},
 											},
-											Label{Text: "系统代理", Font: Font{Family: "Microsoft YaHei UI", PointSize: 10, Bold: true}, TextColor: walk.RGB(23, 37, 84)},
-											Label{Text: "需要让浏览器或多数桌面软件直接走代理时，可开启 Windows 系统代理。", TextColor: walk.RGB(100, 116, 139)},
+											Composite{
+												MinSize:    Size{Height: 1},
+												MaxSize:    Size{Height: 1},
+												Background: SolidColorBrush{Color: walk.RGB(226, 232, 240)},
+											},
+											Label{Text: "系统代理", Font: Font{Family: "Microsoft YaHei UI", PointSize: 10, Bold: true}, TextColor: primaryText},
+											Label{Text: "需要让浏览器或多数桌面软件直接走代理时，可开启 Windows 系统代理。", TextColor: mutedText},
 											Composite{
 												Layout: HBox{MarginsZero: true, Spacing: 8},
 												Children: []Widget{
-													PushButton{Text: "开启系统代理", MinSize: Size{Width: 130, Height: 32}, Background: SolidColorBrush{Color: walk.RGB(35, 180, 150)}, OnClicked: enableSystemProxy},
+													PushButton{Text: "开启系统代理", MinSize: Size{Width: 130, Height: 34}, Background: SolidColorBrush{Color: activeButton}, OnClicked: enableSystemProxy},
 													PushButton{Text: "关闭系统代理", MinSize: Size{Width: 130, Height: 32}, OnClicked: disableSystemProxy},
 													HSpacer{},
 												},
@@ -873,10 +919,10 @@ func main() {
 									GroupBox{
 										Title:      "使用提示",
 										Layout:     VBox{Margins: Margins{Left: 16, Top: 12, Right: 16, Bottom: 12}, Spacing: 8},
-										Background: SolidColorBrush{Color: walk.RGB(250, 255, 253)},
+										Background: SolidColorBrush{Color: panelBackground},
 										Children: []Widget{
-											Label{Text: "其他设备使用“本地 IP”加对应端口；工具需要 SOCKS5 时，本地协议请选择 SOCKS5。", TextColor: walk.RGB(37, 99, 105)},
-											Label{Text: "多条运行中的端口可以同时给不同浏览器、指纹浏览器或桌面工具使用。", TextColor: walk.RGB(37, 99, 105)},
+											Label{Text: "其他设备使用“本地 IP”加对应端口；工具需要 SOCKS5 时，本地协议请选择 SOCKS5。", TextColor: accentText},
+											Label{Text: "多条运行中的端口可以同时给不同浏览器、指纹浏览器或桌面工具使用。", TextColor: accentText},
 										},
 									},
 									VSpacer{},
@@ -890,28 +936,28 @@ func main() {
 									GroupBox{
 										Title:      "线路配置",
 										Layout:     VBox{Margins: Margins{Left: 14, Top: 12, Right: 14, Bottom: 12}, Spacing: 10},
-										Background: SolidColorBrush{Color: walk.RGB(250, 255, 253)},
+										Background: SolidColorBrush{Color: panelBackground},
 										Children: []Widget{
 											Composite{
 												Layout: Grid{Columns: 2, MarginsZero: true, Spacing: 8},
 												Children: []Widget{
-													Label{Text: "本地协议", TextColor: walk.RGB(71, 85, 105)},
+													Label{Text: "本地协议", TextColor: mutedText},
 													ComboBox{AssignTo: &localProtocolCB, Model: []string{"HTTP/HTTPS", "SOCKS5"}, CurrentIndex: 0, MinSize: Size{Height: 26}, OnCurrentIndexChanged: markConfigChanged},
-													Label{Text: "上游协议", TextColor: walk.RGB(71, 85, 105)},
+													Label{Text: "上游协议", TextColor: mutedText},
 													ComboBox{AssignTo: &protocolCB, Model: []string{"HTTP", "SOCKS5"}, CurrentIndex: 0, MinSize: Size{Height: 26}, OnCurrentIndexChanged: markConfigChanged},
-													Label{Text: "监听地址", TextColor: walk.RGB(71, 85, 105)},
+													Label{Text: "监听地址", TextColor: mutedText},
 													LineEdit{AssignTo: &listenHostEdit, Text: detectedLANIP, ReadOnly: true, MinSize: Size{Height: 26}},
-													Label{Text: "本地端口", TextColor: walk.RGB(71, 85, 105)},
+													Label{Text: "本地端口", TextColor: mutedText},
 													ComboBox{AssignTo: &portCB, Model: portOptions(0), CurrentIndex: 0, MinSize: Size{Height: 26}, OnCurrentIndexChanged: markConfigChanged},
 												},
 											},
-											Label{Text: "上游代理", TextColor: walk.RGB(71, 85, 105)},
+											Label{Text: "上游代理", TextColor: mutedText},
 											TextEdit{AssignTo: &upstreamEdit, MinSize: Size{Height: 170}, OnTextChanged: markConfigChanged},
-											Label{Text: "监听地址固定为本机内网 IP；端口范围可在设置中调整。", TextColor: walk.RGB(100, 116, 139)},
+											Label{Text: "监听地址固定为本机内网 IP；端口范围可在设置中调整。", TextColor: mutedText},
 											Composite{
 												Layout: HBox{MarginsZero: true, Spacing: 8},
 												Children: []Widget{
-													PushButton{Text: "新增配置", MinSize: Size{Width: 90, Height: 32}, Background: SolidColorBrush{Color: walk.RGB(35, 180, 150)}, OnClicked: addRoute},
+													PushButton{Text: "新增配置", MinSize: Size{Width: 100, Height: 34}, Background: SolidColorBrush{Color: activeButton}, OnClicked: addRoute},
 													HSpacer{},
 												},
 											},
@@ -927,9 +973,9 @@ func main() {
 									GroupBox{
 										Title:      "转发列表",
 										Layout:     VBox{Margins: Margins{Left: 12, Top: 10, Right: 12, Bottom: 10}, Spacing: 8},
-										Background: SolidColorBrush{Color: walk.RGB(250, 255, 253)},
+										Background: SolidColorBrush{Color: panelBackground},
 										Children: []Widget{
-											Label{Text: "选中哪一条，测试选中出口、开启系统代理就针对哪一条。列表中的“实际出口”会显示检测到的国家/地区。", TextColor: walk.RGB(37, 99, 105)},
+											Label{Text: "选中哪一条，测试选中出口、开启系统代理就针对哪一条。列表中的“实际出口”会显示检测到的国家/地区。", TextColor: accentText},
 											ListBox{
 												AssignTo:              &routeList,
 												Model:                 []string{},
@@ -939,7 +985,7 @@ func main() {
 											Composite{
 												Layout: HBox{MarginsZero: true, Spacing: 8},
 												Children: []Widget{
-													PushButton{Text: "启动选中", MinSize: Size{Width: 110, Height: 30}, Background: SolidColorBrush{Color: walk.RGB(35, 180, 150)}, OnClicked: startRoute},
+													PushButton{Text: "启动选中", MinSize: Size{Width: 110, Height: 32}, Background: SolidColorBrush{Color: activeButton}, OnClicked: startRoute},
 													PushButton{Text: "停止选中", MinSize: Size{Width: 110, Height: 30}, OnClicked: stopRoute},
 													PushButton{Text: "测试选中出口", MinSize: Size{Width: 120, Height: 30}, OnClicked: testExitIP},
 													PushButton{Text: "删除选中", MinSize: Size{Width: 110, Height: 30}, OnClicked: deleteRoute},
@@ -960,14 +1006,14 @@ func main() {
 										MinSize:    Size{Width: 150, Height: 420},
 										MaxSize:    Size{Width: 150},
 										Layout:     VBox{Margins: Margins{Left: 12, Top: 14, Right: 12, Bottom: 14}, Spacing: 10},
-										Background: SolidColorBrush{Color: walk.RGB(223, 249, 241)},
+										Background: SolidColorBrush{Color: headerBackground},
 										Children: []Widget{
-											Label{Text: "设置模块", Font: Font{Family: "Microsoft YaHei UI", PointSize: 10, Bold: true}, TextColor: walk.RGB(11, 47, 71)},
-											PushButton{Text: "端口范围", MinSize: Size{Height: 34}, Background: SolidColorBrush{Color: walk.RGB(35, 180, 150)}, OnClicked: openSettingsSection(0)},
-											PushButton{Text: "供应商 API", MinSize: Size{Height: 34}, OnClicked: openSettingsSection(1)},
-											PushButton{Text: "运行日志", MinSize: Size{Height: 34}, OnClicked: openSettingsSection(2)},
+											Label{Text: "设置模块", Font: Font{Family: "Microsoft YaHei UI", PointSize: 10, Bold: true}, TextColor: primaryText},
+											PushButton{AssignTo: &settingsPortBtn, Text: "端口范围", MinSize: Size{Height: 36}, Background: SolidColorBrush{Color: activeButton}, OnClicked: openSettingsSection(0)},
+											PushButton{AssignTo: &settingsAPIBtn, Text: "供应商 API", MinSize: Size{Height: 36}, Background: SolidColorBrush{Color: secondaryButton}, OnClicked: openSettingsSection(1)},
+											PushButton{AssignTo: &settingsLogBtn, Text: "运行日志", MinSize: Size{Height: 36}, Background: SolidColorBrush{Color: secondaryButton}, OnClicked: openSettingsSection(2)},
 											VSpacer{},
-											Label{Text: "端口和 API 共用同一个可用端口池。", TextColor: walk.RGB(37, 99, 105)},
+											Label{Text: "端口和 API 共用同一个可用端口池。", TextColor: accentText},
 										},
 									},
 									Composite{
@@ -981,18 +1027,18 @@ func main() {
 													GroupBox{
 														Title:      "端口范围",
 														Layout:     VBox{Margins: Margins{Left: 14, Top: 12, Right: 14, Bottom: 12}, Spacing: 10},
-														Background: SolidColorBrush{Color: walk.RGB(250, 255, 253)},
+														Background: SolidColorBrush{Color: panelBackground},
 														Children: []Widget{
 															Composite{
 																Layout: Grid{Columns: 2, MarginsZero: true, Spacing: 8},
 																Children: []Widget{
-																	Label{Text: "端口起始", TextColor: walk.RGB(71, 85, 105)},
+																	Label{Text: "端口起始", TextColor: mutedText},
 																	LineEdit{AssignTo: &portStartEdit, Text: "10000", MinSize: Size{Height: 26}, OnTextChanged: portRangeChanged},
-																	Label{Text: "端口结束", TextColor: walk.RGB(71, 85, 105)},
+																	Label{Text: "端口结束", TextColor: mutedText},
 																	LineEdit{AssignTo: &portEndEdit, Text: "10099", MinSize: Size{Height: 26}, OnTextChanged: portRangeChanged},
 																},
 															},
-															Label{Text: "本地端口下拉会按这个范围生成，并自动排除转发列表里已占用的端口。", TextColor: walk.RGB(100, 116, 139)},
+															Label{Text: "本地端口下拉会按这个范围生成，并自动排除转发列表里已占用的端口。", TextColor: mutedText},
 														},
 													},
 													VSpacer{},
@@ -1006,7 +1052,7 @@ func main() {
 													GroupBox{
 														Title:      "供应商 API",
 														Layout:     VBox{Margins: Margins{Left: 14, Top: 12, Right: 14, Bottom: 12}, Spacing: 10},
-														Background: SolidColorBrush{Color: walk.RGB(250, 255, 253)},
+														Background: SolidColorBrush{Color: panelBackground},
 														Children: []Widget{
 															Composite{
 																Layout: Grid{Columns: 2, MarginsZero: true, Spacing: 8},
@@ -1033,7 +1079,7 @@ func main() {
 																Layout: HBox{MarginsZero: true},
 																Children: []Widget{
 																	HSpacer{},
-																	PushButton{Text: "按国家获取 IP", MinSize: Size{Width: 150, Height: 32}, Background: SolidColorBrush{Color: walk.RGB(35, 180, 150)}, OnClicked: fetchAPI},
+																	PushButton{Text: "按国家获取 IP", MinSize: Size{Width: 150, Height: 34}, Background: SolidColorBrush{Color: activeButton}, OnClicked: fetchAPI},
 																},
 															},
 														},
@@ -1049,12 +1095,12 @@ func main() {
 													GroupBox{
 														Title:      "运行日志",
 														Layout:     VBox{Margins: Margins{Left: 14, Top: 12, Right: 14, Bottom: 12}, Spacing: 8},
-														Background: SolidColorBrush{Color: walk.RGB(250, 255, 253)},
+														Background: SolidColorBrush{Color: panelBackground},
 														Children: []Widget{
 															Composite{
 																Layout: HBox{MarginsZero: true},
 																Children: []Widget{
-																	Label{Text: "运行日志会自动滚动到底部，可手动滑动查看历史。", TextColor: walk.RGB(37, 99, 105)},
+																	Label{Text: "运行日志会自动滚动到底部，可手动滑动查看历史。", TextColor: accentText},
 																	HSpacer{},
 																	PushButton{Text: "清理日志", MinSize: Size{Width: 100, Height: 28}, OnClicked: clearLogs},
 																},
