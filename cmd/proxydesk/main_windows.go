@@ -21,6 +21,7 @@ import (
 	"golang.org/x/net/proxy"
 
 	core "proxydesk/internal/app"
+	"proxydesk/internal/catalog"
 	"proxydesk/internal/provider"
 	"proxydesk/internal/proxyparse"
 	"proxydesk/internal/routeproxy"
@@ -54,10 +55,10 @@ func (i publicIPInfo) Display() string {
 }
 
 func main() {
-	countries := allCountries()
-	defaultCountry := defaultCountryIndex(countries, "US")
+	countries := catalog.Countries()
+	defaultCountry := catalog.DefaultCountryIndex(countries, "US")
 	filteredCountries := append([]string{}, countries...)
-	apiCityOptions := cityOptionsForCountry("US")
+	apiCityOptions := catalog.CityOptions("US")
 	detectedLANIP := detectLANIP()
 	pageBackground := walk.RGB(244, 247, 249)
 	panelBackground := walk.RGB(255, 255, 255)
@@ -139,7 +140,7 @@ func main() {
 			return ""
 		}
 		value := strings.TrimSpace(cityCB.Text())
-		if value == "" || value == cityAllOption {
+		if value == "" || value == catalog.CityAllOption {
 			return ""
 		}
 		return value
@@ -148,11 +149,11 @@ func main() {
 		if cityCB == nil {
 			return
 		}
-		countryCode, _ := splitCountry(selectedCountry())
+		countryCode, _ := catalog.SplitCountry(selectedCountry())
 		current := selectedCity()
-		apiCityOptions = cityOptionsForCountry(countryCode)
+		apiCityOptions = catalog.CityOptions(countryCode)
 		_ = cityCB.SetModel(apiCityOptions)
-		idx := stringIndex(apiCityOptions, current)
+		idx := catalog.StringIndex(apiCityOptions, current)
 		if idx < 0 {
 			idx = 0
 		}
@@ -163,9 +164,9 @@ func main() {
 			return
 		}
 		current := selectedCountry()
-		filteredCountries = filterCountries(countries, countrySearchEdit.Text())
+		filteredCountries = catalog.FilterCountries(countries, countrySearchEdit.Text())
 		_ = countryCB.SetModel(filteredCountries)
-		idx := countryIndex(filteredCountries, current)
+		idx := catalog.CountryIndex(filteredCountries, current)
 		if idx < 0 {
 			idx = 0
 		}
@@ -525,7 +526,7 @@ func main() {
 	}
 
 	fetchAPI := func() {
-		countryCode, _ := splitCountry(selectedCountry())
+		countryCode, _ := catalog.SplitCountry(selectedCountry())
 		city := selectedCity()
 		upstreamProtocol := selectedAPIUpstreamProtocol()
 		client := provider.Client{
