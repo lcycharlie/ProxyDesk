@@ -3,6 +3,7 @@ module proxydesk
 go 1.25.0
 
 require (
+	fyne.io/systray v1.11.0
 	github.com/lxn/walk v0.0.0-20210112085537-c389da54e794
 	github.com/wailsapp/wails/v2 v2.10.2
 	golang.org/x/net v0.55.0
