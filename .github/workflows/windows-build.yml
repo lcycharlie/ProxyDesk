@@ -14,7 +14,7 @@ jobs:
 
       - uses: actions/setup-go@v5
         with:
-          go-version: "1.23.x"
+          go-version: "1.25.x"
 
       - name: Download dependencies
         run: go mod tidy
@@ -23,9 +23,13 @@ jobs:
         run: |
           go run github.com/akavel/rsrc@v0.10.2 -manifest build/windows/ProxyDesk.exe.manifest -ico build/windows/ProxyDesk.ico -o cmd/proxydesk/rsrc.syso
           go run ./build/tools/fix_icon_group.go cmd/proxydesk/rsrc.syso
+          go run github.com/akavel/rsrc@v0.10.2 -manifest build/windows/ProxyDesk.exe.manifest -ico build/windows/ProxyDesk.ico -o cmd/proxydesk-modern/rsrc.syso
+          go run ./build/tools/fix_icon_group.go cmd/proxydesk-modern/rsrc.syso
 
       - name: Build Windows exe
-        run: go build -ldflags="-H windowsgui -s -w" -o dist/ProxyDesk.exe ./cmd/proxydesk
+        run: |
+          go build -ldflags="-H windowsgui -s -w" -o dist/ProxyDesk.exe ./cmd/proxydesk
+          go build -tags desktop,production -ldflags="-H windowsgui -s -w" -o dist/ProxyDeskModern.exe ./cmd/proxydesk-modern
 
       - name: Install Inno Setup
         run: choco install innosetup -y --no-progress
@@ -38,4 +42,5 @@ jobs:
           name: ProxyDesk-windows-amd64
           path: |
             dist/ProxyDesk.exe
+            dist/ProxyDeskModern.exe
             dist/ProxyDeskSetup.exe

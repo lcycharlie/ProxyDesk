@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ProxyDesk Modern UI</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">P</div>
+          <div>
+            <div class="brand-title">ProxyDesk</div>
+            <div class="brand-subtitle">端口转发控制台</div>
+          </div>
+        </div>
+
+        <nav class="nav" aria-label="主导航">
+          <button class="nav-item active" data-page="dashboard">
+            <span class="nav-icon">01</span>
+            <span>概览</span>
+          </button>
+          <button class="nav-item" data-page="config">
+            <span class="nav-icon">02</span>
+            <span>线路配置</span>
+          </button>
+          <button class="nav-item" data-page="routes">
+            <span class="nav-icon">03</span>
+            <span>转发列表</span>
+          </button>
+          <button class="nav-item" data-page="settings">
+            <span class="nav-icon">04</span>
+            <span>设置</span>
+          </button>
+        </nav>
+
+        <div class="sidebar-footer">
+          <div class="tiny-label">实际国家看出口检测</div>
+          <div class="sidebar-status">Core ready</div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">国家住宅 IP 本地端口转发器</p>
+            <h1>工作台</h1>
+          </div>
+          <section class="status-grid" aria-label="状态摘要">
+            <div class="status-card">
+              <div class="status-card-head">
+                <span>当前环境出口</span>
+                <button class="icon-button" id="refreshEnv" title="刷新当前环境出口">R</button>
+              </div>
+              <strong id="envExit">129.227.235.62 JP</strong>
+            </div>
+            <div class="status-card">
+              <span>本地 IP</span>
+              <strong>192.168.31.140</strong>
+            </div>
+          </section>
+        </header>
+
+        <section class="metrics-row">
+          <div class="metric">
+            <span>状态</span>
+            <strong class="badge badge-idle">未启动</strong>
+          </div>
+          <div class="metric">
+            <span>出口 IP</span>
+            <strong>75.82.36.185 US</strong>
+          </div>
+          <div class="metric">
+            <span>运行本地协议</span>
+            <strong>SOCKS5</strong>
+          </div>
+          <div class="metric">
+            <span>运行上游协议</span>
+            <strong>SOCKS5</strong>
+          </div>
+        </section>
+
+        <section class="page active" id="page-dashboard">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Overview</p>
+              <h2>当前连接</h2>
+            </div>
+          </div>
+
+          <div class="dashboard-grid">
+            <article class="card card-large">
+              <div class="card-title">选中线路</div>
+              <dl class="detail-list">
+                <div><dt>实际出口</dt><dd>75.82.36.185 United States California Chatsworth</dd></div>
+                <div><dt>上游代理</dt><dd>global.rpip.lokiproxy.com:35001</dd></div>
+                <div><dt>最近错误</dt><dd class="danger">-</dd></div>
+              </dl>
+            </article>
+
+            <article class="card">
+              <div class="card-title">系统代理</div>
+              <p class="muted">需要让浏览器或桌面软件直接走代理时，开启 Windows 系统代理。</p>
+              <div class="button-row">
+                <button class="btn primary">开启系统代理</button>
+                <button class="btn ghost">关闭系统代理</button>
+              </div>
+            </article>
+
+            <article class="card hint-card">
+              <div class="card-title">使用提示</div>
+              <p>其他设备使用“本地 IP”加对应端口；工具需要 SOCKS5 时，本地协议请选择 SOCKS5。</p>
+              <p>多条运行中的端口可以同时给不同浏览器、指纹浏览器或桌面工具使用。</p>
+            </article>
+          </div>
+        </section>
+
+        <section class="page" id="page-config">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Route</p>
+              <h2>线路配置</h2>
+            </div>
+            <button class="btn primary">新增配置</button>
+          </div>
+
+          <form class="card form-card">
+            <label>
+              <span>本地协议</span>
+              <select>
+                <option>HTTP/HTTPS</option>
+                <option selected>SOCKS5</option>
+              </select>
+            </label>
+            <label>
+              <span>上游协议</span>
+              <select>
+                <option>HTTP</option>
+                <option selected>SOCKS5</option>
+              </select>
+            </label>
+            <label>
+              <span>监听地址</span>
+              <input value="192.168.31.140" readonly />
+            </label>
+            <label>
+              <span>本地端口</span>
+              <select id="portSelect"></select>
+            </label>
+            <label class="span-2">
+              <span>上游代理</span>
+              <textarea>global.rpip.lokiproxy.com:35001:USER096836-session-5MHDsJKATDS:48a951</textarea>
+            </label>
+          </form>
+        </section>
+
+        <section class="page" id="page-routes">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Forwarding</p>
+              <h2>转发列表</h2>
+            </div>
+            <div class="button-row">
+              <button class="btn ghost">启动选中</button>
+              <button class="btn ghost">停止选中</button>
+              <button class="btn danger">停止全部</button>
+            </div>
+          </div>
+
+          <div class="table-card">
+            <table>
+              <thead>
+                <tr>
+                  <th>状态</th>
+                  <th>本地地址</th>
+                  <th>本地协议</th>
+                  <th>上游协议</th>
+                  <th>上游代理</th>
+                  <th>实际出口</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr class="selected">
+                  <td><span class="badge badge-running">运行中</span></td>
+                  <td>192.168.31.140:10000</td>
+                  <td>SOCKS5</td>
+                  <td>SOCKS5</td>
+                  <td>global.rpip.lokiproxy.com:35001</td>
+                  <td>75.82.36.185 US</td>
+                </tr>
+                <tr>
+                  <td><span class="badge badge-idle">未启动</span></td>
+                  <td>192.168.31.140:10001</td>
+                  <td>HTTP/HTTPS</td>
+                  <td>HTTP</td>
+                  <td>global.rpip.lokiproxy.com:35001</td>
+                  <td>-</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="page" id="page-settings">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">Settings</p>
+              <h2>设置</h2>
+            </div>
+          </div>
+
+          <div class="settings-layout">
+            <div class="settings-tabs">
+              <button class="settings-tab active" data-settings="ports">端口范围</button>
+              <button class="settings-tab" data-settings="api">供应商 API</button>
+              <button class="settings-tab" data-settings="logs">运行日志</button>
+            </div>
+
+            <article class="card settings-panel active" id="settings-ports">
+              <div class="card-title">端口范围</div>
+              <div class="form-inline">
+                <label><span>端口起始</span><input value="10000" /></label>
+                <label><span>端口结束</span><input value="10099" /></label>
+              </div>
+              <p class="muted">本地端口下拉会按这个范围生成，并自动排除转发列表里已占用的端口。</p>
+            </article>
+
+            <article class="card settings-panel" id="settings-api">
+              <div class="card-title">供应商 API</div>
+              <div class="form-card compact">
+                <label><span>国家搜索</span><input placeholder="US / JP / NG / 美国" /></label>
+                <label><span>国家/地区</span><select><option>美国 (US)</option><option>日本 (JP)</option><option>尼日利亚 (NG)</option></select></label>
+                <label><span>城市/州</span><select><option>全部城市</option><option>California</option><option>Tokyo</option><option>Lagos</option></select></label>
+                <label><span>本地端口</span><select><option>10000</option><option>10001</option></select></label>
+                <label class="span-2"><span>API 地址</span><input value="http://gen.lokiproxy.com/gen?ptype=13&count=1&proto=http&stype=text&split=rn" /></label>
+              </div>
+              <div class="button-row right"><button class="btn primary">按国家获取 IP</button></div>
+            </article>
+
+            <article class="card settings-panel" id="settings-logs">
+              <div class="card-title-row">
+                <div class="card-title">运行日志</div>
+                <button class="btn ghost">清理日志</button>
+              </div>
+              <pre class="log-box">23:37:18 已新增转发配置：192.168.31.140:10000 -> global.rpip.lokiproxy.com:35001
+23:37:32 已启动本地 SOCKS5 代理
+23:37:37 选中转发出口检测成功：75.82.36.185 US</pre>
+            </article>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

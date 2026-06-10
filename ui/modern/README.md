@@ -1,6 +1,6 @@
 # ProxyDesk Modern UI Prototype
 
-这是 ProxyDesk 的现代 UI 原型，当前作为并行前端资源存在，不替换现有 Walk 版 Windows 应用。
+这是 ProxyDesk 的现代 UI 原型，当前已经通过 `cmd/proxydesk-modern` 嵌入到并行 Windows 桌面应用中，不替换现有 Walk 版 Windows 应用。
 
 ## 目标
 
@@ -17,16 +17,26 @@
 
 ## 打开方式
 
-直接用浏览器打开：
+直接用浏览器预览：
 
 ```text
 ui/modern/index.html
 ```
 
+构建现代桌面应用：
+
+```powershell
+go build -tags desktop,production -ldflags="-H windowsgui -s -w" -o dist/ProxyDeskModern.exe ./cmd/proxydesk-modern
+```
+
+`scripts/build-windows.ps1` 和 GitHub Actions 会同时产出：
+
+- `dist/ProxyDesk.exe`：当前功能完整的 Walk 版。
+- `dist/ProxyDeskModern.exe`：已嵌入现代 UI 的 Wails/WebView2 版。
+
 ## 下一步接入顺序
 
-1. 新增现代 UI 桌面壳，优先考虑 WebView2/Wails 方案。
-2. 保留 Walk 版作为 legacy fallback。
-3. 先接只读状态：当前环境出口、本地 IP、转发列表、日志。
-4. 再接可写操作：新增配置、启动、停止、删除、供应商 API、系统代理。
-5. 通过 `docs/feature-parity-checklist.md` 后再替换默认打包产物。
+1. 保留 Walk 版作为 legacy fallback。
+2. 先接只读状态：当前环境出口、本地 IP、转发列表、日志。
+3. 再接可写操作：新增配置、启动、停止、删除、供应商 API、系统代理。
+4. 通过 `docs/feature-parity-checklist.md` 后再替换默认打包产物。

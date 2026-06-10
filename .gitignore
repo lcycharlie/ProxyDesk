@@ -1,5 +1,6 @@
 .gocache/
 .gomodcache/
 dist/
+!internal/modernui/dist/
+!internal/modernui/dist/**
 *.exe
-

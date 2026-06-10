@@ -4,7 +4,10 @@ go mod tidy
 New-Item -ItemType Directory -Force -Path dist | Out-Null
 go run github.com/akavel/rsrc@v0.10.2 -manifest build/windows/ProxyDesk.exe.manifest -ico build/windows/ProxyDesk.ico -o cmd/proxydesk/rsrc.syso
 go run ./build/tools/fix_icon_group.go cmd/proxydesk/rsrc.syso
+go run github.com/akavel/rsrc@v0.10.2 -manifest build/windows/ProxyDesk.exe.manifest -ico build/windows/ProxyDesk.ico -o cmd/proxydesk-modern/rsrc.syso
+go run ./build/tools/fix_icon_group.go cmd/proxydesk-modern/rsrc.syso
 go build -ldflags="-H windowsgui -s -w" -o dist/ProxyDesk.exe ./cmd/proxydesk
+go build -tags desktop,production -ldflags="-H windowsgui -s -w" -o dist/ProxyDeskModern.exe ./cmd/proxydesk-modern
 
 if (Get-Command iscc -ErrorAction SilentlyContinue) {
     iscc build/windows/ProxyDesk.iss
