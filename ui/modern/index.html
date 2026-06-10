@@ -58,7 +58,7 @@
             </div>
             <div class="status-card">
               <span>本地 IP</span>
-              <strong>192.168.31.140</strong>
+              <strong id="localIP">-</strong>
             </div>
           </section>
         </header>
@@ -143,7 +143,7 @@
             </label>
             <label>
               <span>监听地址</span>
-              <input value="192.168.31.140" readonly />
+              <input id="listenHost" value="-" readonly />
             </label>
             <label>
               <span>本地端口</span>
@@ -221,8 +221,8 @@
             <article class="card settings-panel active" id="settings-ports">
               <div class="card-title">端口范围</div>
               <div class="form-inline">
-                <label><span>端口起始</span><input value="10000" /></label>
-                <label><span>端口结束</span><input value="10099" /></label>
+                <label><span>端口起始</span><input id="portStartInput" value="10000" /></label>
+                <label><span>端口结束</span><input id="portEndInput" value="10099" /></label>
               </div>
               <p class="muted">本地端口下拉会按这个范围生成，并自动排除转发列表里已占用的端口。</p>
             </article>
@@ -231,9 +231,9 @@
               <div class="card-title">供应商 API</div>
               <div class="form-card compact">
                 <label><span>国家搜索</span><input placeholder="US / JP / NG / 美国" /></label>
-                <label><span>国家/地区</span><select><option>美国 (US)</option><option>日本 (JP)</option><option>尼日利亚 (NG)</option></select></label>
-                <label><span>城市/州</span><select><option>全部城市</option><option>California</option><option>Tokyo</option><option>Lagos</option></select></label>
-                <label><span>本地端口</span><select><option>10000</option><option>10001</option></select></label>
+                <label><span>国家/地区</span><select id="countrySelect"></select></label>
+                <label><span>城市/州</span><select id="citySelect"></select></label>
+                <label><span>本地端口</span><select id="apiPortSelect"></select></label>
                 <label class="span-2"><span>API 地址</span><input value="http://gen.lokiproxy.com/gen?ptype=13&count=1&proto=http&stype=text&split=rn" /></label>
               </div>
               <div class="button-row right"><button class="btn primary">按国家获取 IP</button></div>
@@ -253,6 +253,7 @@
       </main>
     </div>
 
+    <script src="/wails/runtime.js"></script>
     <script src="./app.js"></script>
   </body>
 </html>
