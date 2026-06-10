@@ -203,35 +203,25 @@ func main() {
 		}
 		return core.ProtocolHTTP
 	}
-	currentPortRange := func() (int, int) {
-		start := routing.DefaultPortStart
-		end := routing.DefaultPortEnd
+	currentPortRangeText := func() uistate.PortRangeText {
+		input := uistate.PortRangeText{}
 		if portStartEdit != nil {
-			if value, err := strconv.Atoi(strings.TrimSpace(portStartEdit.Text())); err == nil {
-				start = value
-			}
+			input.Start = portStartEdit.Text()
 		}
 		if portEndEdit != nil {
-			if value, err := strconv.Atoi(strings.TrimSpace(portEndEdit.Text())); err == nil {
-				end = value
-			}
+			input.End = portEndEdit.Text()
 		}
-		return start, end
+		return input
 	}
 	validatePortRange := func() (int, int, error) {
-		start, end := currentPortRange()
-		portRange := routing.PortRange{Start: start, End: end}
-		if err := routing.ValidatePortRange(portRange); err != nil {
+		portRange, err := uistate.ValidatePortRangeText(currentPortRangeText())
+		if err != nil {
 			return 0, 0, err
 		}
-		return start, end, nil
+		return portRange.Start, portRange.End, nil
 	}
 	portOptions := func(keepPort int) []string {
-		start, end := currentPortRange()
-		if start > end {
-			return []string{}
-		}
-		return routing.PortOptions(routing.PortRange{Start: start, End: end}, routes.UsedPorts(keepPort))
+		return uistate.AvailablePortOptions(currentPortRangeText(), routes.UsedPorts(keepPort))
 	}
 	refreshPortOptions := func(keepPort int) {
 		options := portOptions(keepPort)
@@ -240,12 +230,13 @@ func main() {
 				return
 			}
 			_ = combo.SetModel(options)
-			if keepPort > 0 {
-				_ = combo.SetText(strconv.Itoa(keepPort))
+			text, index := uistate.PreferredPortSelection(options, keepPort)
+			if text != "" {
+				_ = combo.SetText(text)
 				return
 			}
-			if len(options) > 0 {
-				_ = combo.SetCurrentIndex(0)
+			if index >= 0 {
+				_ = combo.SetCurrentIndex(index)
 				return
 			}
 			_ = combo.SetText("")
