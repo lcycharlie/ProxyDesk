@@ -74,6 +74,7 @@ func main() {
 	countries := allCountries()
 	defaultCountry := defaultCountryIndex(countries, "US")
 	filteredCountries := append([]string{}, countries...)
+	apiCityOptions := cityOptionsForCountry("US")
 	detectedLANIP := detectLANIP()
 	pageBackground := walk.RGB(244, 247, 249)
 	panelBackground := walk.RGB(255, 255, 255)
@@ -89,9 +90,9 @@ func main() {
 	dangerText := walk.RGB(185, 28, 28)
 
 	var mw *walk.MainWindow
-	var countryCB, localProtocolCB, protocolCB, portCB *walk.ComboBox
+	var countryCB, cityCB, localProtocolCB, protocolCB, portCB *walk.ComboBox
 	var apiLocalProtocolCB, apiProtocolCB, apiPortCB *walk.ComboBox
-	var countrySearchEdit, listenHostEdit, portStartEdit, portEndEdit, apiEndpoint, apiCountryParam, apiJSONKey *walk.LineEdit
+	var countrySearchEdit, listenHostEdit, portStartEdit, portEndEdit, apiEndpoint, apiCountryParam, apiCityParam, apiJSONKey *walk.LineEdit
 	var upstreamEdit, logBox *walk.TextEdit
 	var routeList *walk.ListBox
 	var contentTitle *walk.Label
@@ -149,6 +150,30 @@ func main() {
 		}
 		return countries[0]
 	}
+	selectedCity := func() string {
+		if cityCB == nil {
+			return ""
+		}
+		value := strings.TrimSpace(cityCB.Text())
+		if value == "" || value == cityAllOption {
+			return ""
+		}
+		return value
+	}
+	refreshCityOptions := func() {
+		if cityCB == nil {
+			return
+		}
+		countryCode, _ := splitCountry(selectedCountry())
+		current := selectedCity()
+		apiCityOptions = cityOptionsForCountry(countryCode)
+		_ = cityCB.SetModel(apiCityOptions)
+		idx := stringIndex(apiCityOptions, current)
+		if idx < 0 {
+			idx = 0
+		}
+		_ = cityCB.SetCurrentIndex(idx)
+	}
 	refreshCountryOptions := func() {
 		if countryCB == nil || countrySearchEdit == nil {
 			return
@@ -162,9 +187,11 @@ func main() {
 		}
 		if len(filteredCountries) > 0 {
 			_ = countryCB.SetCurrentIndex(idx)
+			refreshCityOptions()
 			return
 		}
 		_ = countryCB.SetText("")
+		refreshCityOptions()
 	}
 	selectedLocalProtocol := func() core.Protocol {
 		if localProtocolCB.CurrentIndex() == 1 {
@@ -609,18 +636,20 @@ func main() {
 
 	fetchAPI := func() {
 		countryCode, _ := splitCountry(selectedCountry())
+		city := selectedCity()
 		upstreamProtocol := selectedAPIUpstreamProtocol()
 		client := provider.Client{
 			Config: core.APIConfig{
 				Endpoint:        strings.TrimSpace(apiEndpoint.Text()),
 				Method:          http.MethodGet,
 				CountryParam:    strings.TrimSpace(apiCountryParam.Text()),
+				CityParam:       strings.TrimSpace(apiCityParam.Text()),
 				ResponseJSONKey: strings.TrimSpace(apiJSONKey.Text()),
 			},
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 35*time.Second)
 		defer cancel()
-		upstream, err := client.Fetch(ctx, countryCode, upstreamProtocol)
+		upstream, err := client.Fetch(ctx, countryCode, city, upstreamProtocol)
 		if err != nil {
 			_ = errorLabel.SetText(err.Error())
 			appendLog("API 获取失败：%v", err)
@@ -637,11 +666,15 @@ func main() {
 		addRouteToList(route, " API")
 		_ = upstreamEdit.SetText(proxyparse.Format(upstream))
 		_ = errorLabel.SetText("-")
-		appendLog("API 获取成功：%s %s，已加入转发列表端口 %d", countryCode, upstream.Address(), route.LocalHTTPPort)
+		location := countryCode
+		if city != "" {
+			location += " " + city
+		}
+		appendLog("API 获取成功：%s %s，已加入转发列表端口 %d", location, upstream.Address(), route.LocalHTTPPort)
 		walk.MsgBox(
 			mw,
 			"API 获取成功",
-			fmt.Sprintf("已提取 IP 并加入转发列表。\n\n本地代理：%s:%d\n上游代理：%s\n\n请到“转发列表”查看和启动。", route.LocalHost, route.LocalHTTPPort, upstream.Address()),
+			fmt.Sprintf("已按 %s 提取 IP 并加入转发列表。\n\n本地代理：%s:%d\n上游代理：%s\n\n请到“转发列表”查看和启动。", location, route.LocalHost, route.LocalHTTPPort, upstream.Address()),
 			walk.MsgBoxIconInformation,
 		)
 	}
@@ -1070,7 +1103,9 @@ func main() {
 																	Label{Text: "国家搜索"},
 																	LineEdit{AssignTo: &countrySearchEdit, MinSize: Size{Height: 26}, OnTextChanged: refreshCountryOptions},
 																	Label{Text: "国家/地区"},
-																	ComboBox{AssignTo: &countryCB, Model: filteredCountries, CurrentIndex: defaultCountry, MinSize: Size{Height: 26}},
+																	ComboBox{AssignTo: &countryCB, Model: filteredCountries, CurrentIndex: defaultCountry, MinSize: Size{Height: 26}, OnCurrentIndexChanged: refreshCityOptions},
+																	Label{Text: "城市/州"},
+																	ComboBox{AssignTo: &cityCB, Model: apiCityOptions, CurrentIndex: 0, MinSize: Size{Height: 26}},
 																	Label{Text: "本地协议"},
 																	ComboBox{AssignTo: &apiLocalProtocolCB, Model: []string{"HTTP/HTTPS", "SOCKS5"}, CurrentIndex: 0, MinSize: Size{Height: 26}},
 																	Label{Text: "上游协议"},
@@ -1081,6 +1116,8 @@ func main() {
 																	LineEdit{AssignTo: &apiEndpoint, Text: "http://gen.lokiproxy.com/gen?ptype=13&count=1&proto=http&stype=text&split=rn", MinSize: Size{Height: 26}},
 																	Label{Text: "国家参数"},
 																	LineEdit{AssignTo: &apiCountryParam, Text: "region", MinSize: Size{Height: 26}},
+																	Label{Text: "城市参数"},
+																	LineEdit{AssignTo: &apiCityParam, Text: "st", MinSize: Size{Height: 26}},
 																	Label{Text: "JSON 字段"},
 																	LineEdit{AssignTo: &apiJSONKey, MinSize: Size{Height: 26}},
 																},
@@ -1089,7 +1126,7 @@ func main() {
 																Layout: HBox{MarginsZero: true},
 																Children: []Widget{
 																	HSpacer{},
-																	PushButton{Text: "按国家获取 IP", MinSize: Size{Width: 150, Height: 34}, Background: SolidColorBrush{Color: ctaButton}, OnClicked: fetchAPI},
+																	PushButton{Text: "按国家/城市获取 IP", MinSize: Size{Width: 170, Height: 34}, Background: SolidColorBrush{Color: ctaButton}, OnClicked: fetchAPI},
 																},
 															},
 														},
@@ -1276,6 +1313,15 @@ func countryIndex(countries []string, value string) int {
 	return -1
 }
 
+func stringIndex(values []string, value string) int {
+	for i, item := range values {
+		if strings.EqualFold(item, value) {
+			return i
+		}
+	}
+	return -1
+}
+
 func filterCountries(countries []string, query string) []string {
 	query = strings.ToLower(strings.TrimSpace(query))
 	if query == "" {
@@ -1288,6 +1334,49 @@ func filterCountries(countries []string, query string) []string {
 		}
 	}
 	return filtered
+}
+
+const cityAllOption = "全部城市"
+
+func cityOptionsForCountry(countryCode string) []string {
+	countryCode = strings.ToUpper(strings.TrimSpace(countryCode))
+	cities := countryCityOptions()[countryCode]
+	options := []string{cityAllOption}
+	options = append(options, cities...)
+	return options
+}
+
+func countryCityOptions() map[string][]string {
+	return map[string][]string{
+		"AR": {"Buenos Aires", "Cordoba", "Mendoza", "Rosario"},
+		"AU": {"New South Wales", "Queensland", "Victoria", "Western Australia", "Sydney", "Melbourne"},
+		"BR": {"Sao Paulo", "Rio de Janeiro", "Minas Gerais", "Parana", "Brasilia"},
+		"CA": {"Alberta", "British Columbia", "Ontario", "Quebec", "Toronto", "Vancouver"},
+		"CN": {"Beijing", "Shanghai", "Guangdong", "Jiangsu", "Zhejiang", "Sichuan"},
+		"DE": {"Berlin", "Bavaria", "Hamburg", "Hesse", "North Rhine-Westphalia"},
+		"ES": {"Andalusia", "Barcelona", "Madrid", "Valencia"},
+		"FR": {"Auvergne-Rhone-Alpes", "Ile-de-France", "Marseille", "Nouvelle-Aquitaine", "Paris"},
+		"GB": {"England", "London", "Manchester", "Scotland", "Wales"},
+		"HK": {"Central and Western", "Kowloon", "New Territories", "Wan Chai"},
+		"ID": {"Bali", "Jakarta", "Java", "Surabaya"},
+		"IN": {"Delhi", "Gujarat", "Karnataka", "Maharashtra", "Mumbai", "Tamil Nadu"},
+		"IT": {"Lazio", "Lombardy", "Milan", "Rome", "Veneto"},
+		"JP": {"Aichi", "Chiba", "Fukuoka", "Kanagawa", "Osaka", "Tokyo"},
+		"KR": {"Busan", "Daegu", "Gyeonggi", "Incheon", "Seoul"},
+		"MX": {"Jalisco", "Mexico City", "Nuevo Leon", "Puebla"},
+		"MY": {"Johor", "Kuala Lumpur", "Penang", "Selangor"},
+		"NG": {"Abuja", "Kano", "Lagos", "Ogun", "Oyo", "Rivers"},
+		"NL": {"Amsterdam", "North Holland", "Rotterdam", "South Holland"},
+		"PH": {"Cebu", "Davao", "Manila", "Quezon City"},
+		"RU": {"Moscow", "Saint Petersburg", "Sverdlovsk", "Tatarstan"},
+		"SG": {"Central", "East", "North", "North-East", "West"},
+		"TH": {"Bangkok", "Chiang Mai", "Chon Buri", "Phuket"},
+		"TR": {"Ankara", "Antalya", "Istanbul", "Izmir"},
+		"TW": {"Kaohsiung", "New Taipei", "Taichung", "Taipei", "Tainan"},
+		"US": {"California", "Florida", "Georgia", "Illinois", "New Jersey", "New York", "Texas", "Virginia", "Washington"},
+		"VN": {"Da Nang", "Ha Noi", "Ho Chi Minh City"},
+		"ZA": {"Cape Town", "Gauteng", "Johannesburg", "KwaZulu-Natal"},
+	}
 }
 
 func environmentCountryDisplay(info publicIPInfo) string {

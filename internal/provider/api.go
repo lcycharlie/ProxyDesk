@@ -19,26 +19,14 @@ type Client struct {
 	HTTP   *http.Client
 }
 
-func (c Client) Fetch(ctx context.Context, countryCode string, protocol app.Protocol) (app.UpstreamProxy, error) {
+func (c Client) Fetch(ctx context.Context, countryCode string, city string, protocol app.Protocol) (app.UpstreamProxy, error) {
 	if c.Config.Endpoint == "" {
 		return app.UpstreamProxy{}, fmt.Errorf("API endpoint is empty")
 	}
 
-	endpoint := c.Config.Endpoint
-	if c.Config.CountryParam != "" || strings.Contains(endpoint, "proto=") {
-		u, err := url.Parse(endpoint)
-		if err != nil {
-			return app.UpstreamProxy{}, err
-		}
-		q := u.Query()
-		if c.Config.CountryParam != "" {
-			q.Set(c.Config.CountryParam, countryCode)
-		}
-		if _, ok := q["proto"]; ok {
-			q.Set("proto", strings.ToLower(string(protocol)))
-		}
-		u.RawQuery = q.Encode()
-		endpoint = u.String()
+	endpoint, err := c.endpoint(countryCode, city, protocol)
+	if err != nil {
+		return app.UpstreamProxy{}, err
 	}
 
 	method := c.Config.Method
@@ -93,4 +81,28 @@ func (c Client) Fetch(ctx context.Context, countryCode string, protocol app.Prot
 		}
 	}
 	return proxyparse.ParseLine(firstLine, protocol)
+}
+
+func (c Client) endpoint(countryCode string, city string, protocol app.Protocol) (string, error) {
+	endpoint := c.Config.Endpoint
+	if c.Config.CountryParam == "" && c.Config.CityParam == "" && !strings.Contains(endpoint, "proto=") {
+		return endpoint, nil
+	}
+
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return "", err
+	}
+	q := u.Query()
+	if c.Config.CountryParam != "" {
+		q.Set(c.Config.CountryParam, countryCode)
+	}
+	if c.Config.CityParam != "" && strings.TrimSpace(city) != "" {
+		q.Set(c.Config.CityParam, strings.TrimSpace(city))
+	}
+	if _, ok := q["proto"]; ok {
+		q.Set("proto", strings.ToLower(string(protocol)))
+	}
+	u.RawQuery = q.Encode()
+	return u.String(), nil
 }

@@ -47,5 +47,6 @@ type APIConfig struct {
 	Method          string            `json:"method"`
 	Headers         map[string]string `json:"headers"`
 	CountryParam    string            `json:"country_param"`
+	CityParam       string            `json:"city_param"`
 	ResponseJSONKey string            `json:"response_json_key"`
 }
