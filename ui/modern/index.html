@@ -7,6 +7,17 @@
     <link rel="stylesheet" href="./styles.css" />
   </head>
   <body>
+    <div class="window-titlebar">
+      <div class="window-drag-region">
+        <span class="window-dot"></span>
+        <span>ProxyDesk</span>
+      </div>
+      <div class="window-controls">
+        <button class="window-control" id="windowMinimise" title="最小化">-</button>
+        <button class="window-control" id="windowToggleMaximise" title="放大/还原">□</button>
+        <button class="window-control close" id="windowClose" title="关闭到后台">×</button>
+      </div>
+    </div>
     <div class="app-shell">
       <aside class="sidebar">
         <div class="brand">
@@ -66,19 +77,19 @@
         <section class="metrics-row">
           <div class="metric">
             <span>状态</span>
-            <strong class="badge badge-idle">未启动</strong>
+            <strong class="badge badge-idle" id="summaryStatus">未启动</strong>
           </div>
           <div class="metric">
             <span>出口 IP</span>
-            <strong>75.82.36.185 US</strong>
+            <strong id="summaryExitIP">-</strong>
           </div>
           <div class="metric">
             <span>运行本地协议</span>
-            <strong>SOCKS5</strong>
+            <strong id="summaryLocalProtocol">-</strong>
           </div>
           <div class="metric">
             <span>运行上游协议</span>
-            <strong>SOCKS5</strong>
+            <strong id="summaryUpstreamProtocol">-</strong>
           </div>
         </section>
 
@@ -94,9 +105,9 @@
             <article class="card card-large">
               <div class="card-title">选中线路</div>
               <dl class="detail-list">
-                <div><dt>实际出口</dt><dd>75.82.36.185 United States California Chatsworth</dd></div>
-                <div><dt>上游代理</dt><dd>global.rpip.lokiproxy.com:35001</dd></div>
-                <div><dt>最近错误</dt><dd class="danger">-</dd></div>
+                <div><dt>实际出口</dt><dd id="dashboardExit">-</dd></div>
+                <div><dt>上游代理</dt><dd id="dashboardUpstream">-</dd></div>
+                <div><dt>最近错误</dt><dd class="danger" id="dashboardError">-</dd></div>
               </dl>
             </article>
 

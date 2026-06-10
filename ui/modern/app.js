@@ -52,7 +52,7 @@ function fillSelect(select, values) {
 }
 
 function applyInitialState(state) {
-  document.querySelector("#envExit").textContent = state.environmentExit || "-";
+  document.querySelector("#envExit").textContent = state.environmentExit || "检测中...";
   document.querySelector("#localIP").textContent = state.localIP || "-";
   document.querySelector("#listenHost").value = state.localIP || "-";
   document.querySelector("#portStartInput").value = state.portStart || "10000";
@@ -72,11 +72,39 @@ function applyInitialState(state) {
   renderRoutes(state.routes || []);
 }
 
+function selectedOrRunningRoute(routes) {
+  if (!routes.length) {
+    return null;
+  }
+  return (
+    routes.find((route) => route.index === selectedRouteIndex) ||
+    routes.find((route) => route.running) ||
+    routes[0]
+  );
+}
+
+function updateSummary(routes) {
+  const selectedRoute = selectedOrRunningRoute(routes || []);
+  const hasRunning = (routes || []).some((route) => route.running);
+  const status = document.querySelector("#summaryStatus");
+  status.textContent = hasRunning ? "运行中" : "未启动";
+  status.classList.toggle("badge-running", hasRunning);
+  status.classList.toggle("badge-idle", !hasRunning);
+
+  document.querySelector("#summaryExitIP").textContent = selectedRoute?.exitDisplay || "-";
+  document.querySelector("#summaryLocalProtocol").textContent = selectedRoute?.localProtocol || "-";
+  document.querySelector("#summaryUpstreamProtocol").textContent = selectedRoute?.upstreamProtocol || "-";
+  document.querySelector("#dashboardExit").textContent = selectedRoute?.exitDisplay || "-";
+  document.querySelector("#dashboardUpstream").textContent = selectedRoute?.upstreamAddress || "-";
+  document.querySelector("#dashboardError").textContent = "-";
+}
+
 function renderRoutes(routes) {
   const body = document.querySelector("#routeTableBody");
   body.textContent = "";
   if (!routes.length) {
     selectedRouteIndex = -1;
+    updateSummary([]);
     const row = document.createElement("tr");
     row.innerHTML = `<td colspan="6" class="empty-row">暂无转发配置，请先在线路配置里新增。</td>`;
     body.appendChild(row);
@@ -103,6 +131,7 @@ function renderRoutes(routes) {
       selectedRouteIndex = route.index;
       document.querySelectorAll("#routeTableBody tr").forEach((item) => item.classList.remove("selected"));
       row.classList.add("selected");
+      updateSummary(routes);
     });
     body.appendChild(row);
   });
@@ -110,6 +139,7 @@ function renderRoutes(routes) {
     body.firstElementChild.classList.add("selected");
     selectedRouteIndex = Number(body.firstElementChild.dataset.index);
   }
+  updateSummary(routes);
 }
 
 async function refreshPorts() {
@@ -159,6 +189,7 @@ async function loadInitialState() {
   try {
     applyInitialState(await backend.GetInitialState());
     await refreshLogs();
+    await refreshEnvironmentExit(false);
   } catch (error) {
     console.error(error);
     applyInitialState(fallbackState);
@@ -183,7 +214,7 @@ document.querySelector("#countrySearchInput").addEventListener("input", async (e
   }
 });
 
-document.querySelector("#refreshEnv").addEventListener("click", async () => {
+async function refreshEnvironmentExit(keepOldValue = true) {
   const envExit = document.querySelector("#envExit");
   const oldText = envExit.textContent;
   envExit.textContent = "检测中...";
@@ -197,8 +228,22 @@ document.querySelector("#refreshEnv").addEventListener("click", async () => {
     envExit.textContent = await backend.RefreshEnvironmentExit();
   } catch (error) {
     console.error(error);
-    envExit.textContent = oldText;
+    envExit.textContent = keepOldValue ? oldText : "检测失败";
   }
+}
+
+document.querySelector("#refreshEnv").addEventListener("click", () => refreshEnvironmentExit(true));
+
+document.querySelector("#windowMinimise")?.addEventListener("click", () => {
+  window.runtime?.WindowMinimise?.();
+});
+
+document.querySelector("#windowToggleMaximise")?.addEventListener("click", () => {
+  window.runtime?.WindowToggleMaximise?.();
+});
+
+document.querySelector("#windowClose")?.addEventListener("click", () => {
+  window.runtime?.Hide?.();
 });
 
 document.querySelector("#addRouteBtn").addEventListener("click", async (event) => {

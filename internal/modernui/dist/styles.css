@@ -47,22 +47,88 @@ textarea {
   font: inherit;
 }
 
+.window-titlebar {
+  position: relative;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 38px;
+  padding: 0 14px 0 18px;
+  color: #526980;
+  background: linear-gradient(90deg, rgba(244, 252, 249, 0.96), rgba(249, 252, 255, 0.96));
+  border-bottom: 1px solid rgba(219, 231, 229, 0.62);
+  user-select: none;
+}
+
+.window-drag-region {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 9px;
+  height: 100%;
+  font-size: 12px;
+  font-weight: 800;
+  --wails-draggable: drag;
+}
+
+.window-dot {
+  width: 10px;
+  height: 10px;
+  background: linear-gradient(135deg, #69f0cf, #13bda1);
+  border-radius: 999px;
+  box-shadow: 0 0 0 4px rgba(23, 184, 157, 0.12);
+}
+
+.window-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.window-control {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 28px;
+  color: #60768a;
+  background: transparent;
+  border: 0;
+  border-radius: 10px;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.window-control:hover {
+  color: var(--brand-strong);
+  background: rgba(23, 184, 157, 0.12);
+}
+
+.window-control.close:hover {
+  color: #ffffff;
+  background: #d44d5c;
+}
+
 .app-shell {
   display: grid;
   grid-template-columns: 184px 1fr;
   gap: 18px;
   width: 100%;
-  height: 100vh;
+  height: calc(100vh - 38px);
   min-height: 0;
-  padding: 18px;
+  padding: 18px 18px 18px;
   overflow: hidden;
+  background:
+    radial-gradient(circle at 72% 6%, rgba(23, 184, 157, 0.14), transparent 30%),
+    linear-gradient(135deg, rgba(234, 250, 246, 0.84), rgba(247, 251, 255, 0.84));
 }
 
 .sidebar {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  height: calc(100vh - 36px);
+  height: calc(100vh - 74px);
   padding: 18px 14px;
   color: #e8f2fb;
   background: linear-gradient(180deg, var(--nav) 0%, #0b1320 100%);
@@ -164,7 +230,7 @@ textarea {
 .main {
   min-width: 0;
   min-height: 0;
-  height: calc(100vh - 36px);
+  height: calc(100vh - 74px);
   display: flex;
   flex-direction: column;
   gap: 14px;

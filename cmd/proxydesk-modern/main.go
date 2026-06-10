@@ -14,6 +14,7 @@ import (
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/windows"
 	"golang.org/x/net/proxy"
 
 	core "proxydesk/internal/app"
@@ -324,14 +325,22 @@ func main() {
 	app := NewApp()
 
 	err := wails.Run(&options.App{
-		Title:  "ProxyDesk",
-		Width:  1180,
-		Height: 760,
+		Title:             "ProxyDesk",
+		Width:             1180,
+		Height:            760,
+		MinWidth:          1080,
+		MinHeight:         700,
+		Frameless:         true,
+		HideWindowOnClose: true,
 		AssetServer: &assetserver.Options{
 			Assets: modernui.FS(),
 		},
 		BackgroundColour: &options.RGBA{R: 244, G: 248, B: 247, A: 255},
-		OnStartup:        app.startup,
+		Windows: &windows.Options{
+			DisableFramelessWindowDecorations: false,
+			Theme:                             windows.Light,
+		},
+		OnStartup: app.startup,
 		Bind: []interface{}{
 			app,
 		},
