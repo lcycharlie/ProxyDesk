@@ -24,6 +24,7 @@ import (
 	"proxydesk/internal/provider"
 	"proxydesk/internal/proxyparse"
 	"proxydesk/internal/routeproxy"
+	"proxydesk/internal/routing"
 	"proxydesk/internal/systemproxy"
 )
 
@@ -201,8 +202,8 @@ func main() {
 		return core.ProtocolHTTP
 	}
 	currentPortRange := func() (int, int) {
-		start := 10000
-		end := 10099
+		start := routing.DefaultPortStart
+		end := routing.DefaultPortEnd
 		if portStartEdit != nil {
 			if value, err := strconv.Atoi(strings.TrimSpace(portStartEdit.Text())); err == nil {
 				start = value
@@ -217,14 +218,9 @@ func main() {
 	}
 	validatePortRange := func() (int, int, error) {
 		start, end := currentPortRange()
-		if start < 1 || start > 65535 || end < 1 || end > 65535 {
-			return 0, 0, fmt.Errorf("端口范围需要在 1-65535 之间")
-		}
-		if start > end {
-			return 0, 0, fmt.Errorf("端口起始不能大于端口结束")
-		}
-		if end-start > 2000 {
-			return 0, 0, fmt.Errorf("端口范围过大，请控制在 2000 个以内")
+		portRange := routing.PortRange{Start: start, End: end}
+		if err := routing.ValidatePortRange(portRange); err != nil {
+			return 0, 0, err
 		}
 		return start, end, nil
 	}
@@ -233,14 +229,7 @@ func main() {
 		if start > end {
 			return []string{}
 		}
-		used := routes.UsedPorts(keepPort)
-		options := []string{}
-		for port := start; port <= end; port++ {
-			if !used[port] {
-				options = append(options, strconv.Itoa(port))
-			}
-		}
-		return options
+		return routing.PortOptions(routing.PortRange{Start: start, End: end}, routes.UsedPorts(keepPort))
 	}
 	refreshPortOptions := func(keepPort int) {
 		options := portOptions(keepPort)
@@ -393,48 +382,20 @@ func main() {
 		if listenHost == "" {
 			listenHost = detectedLANIP
 		}
-		if listenHost != "0.0.0.0" && net.ParseIP(listenHost) == nil && listenHost != "localhost" {
-			return core.PortRoute{}, fmt.Errorf("监听地址应为 127.0.0.1、本机内网 IP 或 0.0.0.0")
-		}
 		startPort, endPort, err := validatePortRange()
 		if err != nil {
 			return core.PortRoute{}, err
 		}
-		if strings.TrimSpace(portCB.Text()) == "" {
-			return core.PortRoute{}, fmt.Errorf("当前端口范围内没有可用端口，请扩大范围或删除转发列表中的配置")
-		}
-		port, err := strconv.Atoi(strings.TrimSpace(portCB.Text()))
-		if err != nil || port < startPort || port > endPort {
-			return core.PortRoute{}, fmt.Errorf("端口需要在 %d-%d 之间", startPort, endPort)
-		}
-		if routes.UsedPorts(0)[port] {
-			return core.PortRoute{}, fmt.Errorf("端口 %d 已被转发列表使用，请选择其他端口", port)
-		}
-		localProtocol := selectedLocalProtocol()
-		upstreamProtocol := selectedUpstreamProtocol()
-
-		line := strings.TrimSpace(upstreamEdit.Text())
-		if strings.Contains(line, "\n") {
-			line = strings.TrimSpace(strings.Split(line, "\n")[0])
-		}
-		upstream, err := proxyparse.ParseLine(line, upstreamProtocol)
-		if err != nil {
-			return core.PortRoute{}, err
-		}
-
-		return core.PortRoute{
-			ID:            "route-" + strconv.Itoa(port),
-			Name:          "Port " + strconv.Itoa(port),
-			CountryCode:   "",
-			CountryName:   "",
-			LocalHost:     listenHost,
-			LocalHTTPPort: port,
-			LocalProtocol: localProtocol,
-			Protocol:      upstreamProtocol,
-			Upstream:      upstream,
-			Enabled:       true,
-			UpdatedAt:     time.Now(),
-		}, nil
+		return routing.BuildManualRoute(routing.ManualRouteInput{
+			ListenHost:       listenHost,
+			PortText:         portCB.Text(),
+			PortRange:        routing.PortRange{Start: startPort, End: endPort},
+			UsedPorts:        routes.UsedPorts(0),
+			LocalProtocol:    selectedLocalProtocol(),
+			UpstreamProtocol: selectedUpstreamProtocol(),
+			ProxyLine:        upstreamEdit.Text(),
+			Now:              time.Now(),
+		})
 	}
 
 	buildRouteFromUpstream := func(portText string, localProtocol core.Protocol, upstream core.UpstreamProxy) (core.PortRoute, error) {
@@ -442,27 +403,15 @@ func main() {
 		if err != nil {
 			return core.PortRoute{}, err
 		}
-		if strings.TrimSpace(portText) == "" {
-			return core.PortRoute{}, fmt.Errorf("当前端口范围内没有可用端口，请扩大范围或删除转发列表中的配置")
-		}
-		port, err := strconv.Atoi(strings.TrimSpace(portText))
-		if err != nil || port < startPort || port > endPort {
-			return core.PortRoute{}, fmt.Errorf("端口需要在 %d-%d 之间", startPort, endPort)
-		}
-		if routes.UsedPorts(0)[port] {
-			return core.PortRoute{}, fmt.Errorf("端口 %d 已被转发列表使用，请选择其他端口", port)
-		}
-		return core.PortRoute{
-			ID:            "route-" + strconv.Itoa(port),
-			Name:          "Port " + strconv.Itoa(port),
-			LocalHost:     detectedLANIP,
-			LocalHTTPPort: port,
+		return routing.BuildRouteFromUpstream(routing.UpstreamRouteInput{
+			ListenHost:    detectedLANIP,
+			PortText:      portText,
+			PortRange:     routing.PortRange{Start: startPort, End: endPort},
+			UsedPorts:     routes.UsedPorts(0),
 			LocalProtocol: localProtocol,
-			Protocol:      upstream.Protocol,
 			Upstream:      upstream,
-			Enabled:       true,
-			UpdatedAt:     time.Now(),
-		}, nil
+			Now:           time.Now(),
+		})
 	}
 
 	addRouteToList := func(route core.PortRoute, source string) {
