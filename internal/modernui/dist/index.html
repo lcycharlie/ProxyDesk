@@ -104,8 +104,8 @@
               <div class="card-title">系统代理</div>
               <p class="muted">需要让浏览器或桌面软件直接走代理时，开启 Windows 系统代理。</p>
               <div class="button-row">
-                <button class="btn primary">开启系统代理</button>
-                <button class="btn ghost">关闭系统代理</button>
+                <button class="btn primary" id="enableSystemProxyBtn">开启系统代理</button>
+                <button class="btn ghost" id="disableSystemProxyBtn">关闭系统代理</button>
               </div>
             </article>
 
@@ -163,9 +163,11 @@
               <h2>转发列表</h2>
             </div>
             <div class="button-row">
-              <button class="btn ghost">启动选中</button>
-              <button class="btn ghost">停止选中</button>
-              <button class="btn danger">停止全部</button>
+              <button class="btn ghost" id="startRouteBtn">启动选中</button>
+              <button class="btn ghost" id="stopRouteBtn">停止选中</button>
+              <button class="btn ghost" id="testRouteBtn">测试出口</button>
+              <button class="btn ghost" id="deleteRouteBtn">删除选中</button>
+              <button class="btn danger" id="stopAllBtn">停止全部</button>
             </div>
           </div>
 
@@ -213,23 +215,26 @@
             <article class="card settings-panel" id="settings-api">
               <div class="card-title">供应商 API</div>
               <div class="form-card compact">
-                <label><span>国家搜索</span><input placeholder="US / JP / NG / 美国" /></label>
+                <label><span>国家搜索</span><input id="countrySearchInput" placeholder="US / JP / NG / 美国" /></label>
                 <label><span>国家/地区</span><select id="countrySelect"></select></label>
                 <label><span>城市/州</span><select id="citySelect"></select></label>
                 <label><span>本地端口</span><select id="apiPortSelect"></select></label>
-                <label class="span-2"><span>API 地址</span><input value="http://gen.lokiproxy.com/gen?ptype=13&count=1&proto=http&stype=text&split=rn" /></label>
+                <label><span>本地协议</span><select id="apiLocalProtocolSelect"></select></label>
+                <label><span>上游协议</span><select id="apiUpstreamProtocolSelect"></select></label>
+                <label class="span-2"><span>API 地址</span><input id="apiEndpointInput" value="http://gen.lokiproxy.com/gen?ptype=13&count=1&proto=http&stype=text&split=rn" /></label>
+                <label><span>国家参数</span><input id="apiCountryParamInput" value="region" /></label>
+                <label><span>城市参数</span><input id="apiCityParamInput" value="st" /></label>
+                <label class="span-2"><span>JSON 字段</span><input id="apiJSONKeyInput" placeholder="文本格式留空，JSON 返回可填写字段名" /></label>
               </div>
-              <div class="button-row right"><button class="btn primary">按国家获取 IP</button></div>
+              <div class="button-row right"><button class="btn primary" id="fetchProviderBtn">按国家获取 IP</button></div>
             </article>
 
             <article class="card settings-panel" id="settings-logs">
               <div class="card-title-row">
                 <div class="card-title">运行日志</div>
-                <button class="btn ghost">清理日志</button>
+                <button class="btn ghost" id="clearLogsBtn">清理日志</button>
               </div>
-              <pre class="log-box">23:37:18 已新增转发配置：192.168.31.140:10000 -> global.rpip.lokiproxy.com:35001
-23:37:32 已启动本地 SOCKS5 代理
-23:37:37 选中转发出口检测成功：75.82.36.185 US</pre>
+              <pre class="log-box" id="logBox">暂无运行日志</pre>
             </article>
           </div>
         </section>
