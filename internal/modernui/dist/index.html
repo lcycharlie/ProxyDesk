@@ -237,7 +237,7 @@
                 <label><span>城市参数</span><input id="apiCityParamInput" value="st" /></label>
                 <label class="span-2"><span>JSON 字段</span><input id="apiJSONKeyInput" placeholder="文本格式留空，JSON 返回可填写字段名" /></label>
               </div>
-              <div class="button-row right"><button class="btn primary" id="fetchProviderBtn">按国家获取 IP</button></div>
+              <div class="button-row right api-action-row"><button class="btn primary" id="fetchProviderBtn">按国家获取 IP</button></div>
             </article>
 
             <article class="card settings-panel" id="settings-logs">
@@ -250,6 +250,17 @@
           </div>
         </section>
       </main>
+    </div>
+
+    <div class="dialog-overlay" id="appDialog" aria-hidden="true">
+      <section class="app-dialog" role="dialog" aria-modal="true" aria-labelledby="dialogTitle">
+        <div class="dialog-icon" id="dialogIcon">✓</div>
+        <div class="dialog-copy">
+          <h3 id="dialogTitle">提示</h3>
+          <p id="dialogMessage">操作完成。</p>
+        </div>
+        <button class="btn primary" id="dialogConfirm">确定</button>
+      </section>
     </div>
 
     <script src="/wails/runtime.js"></script>

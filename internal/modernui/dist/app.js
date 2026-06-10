@@ -51,6 +51,23 @@ function fillSelect(select, values) {
   });
 }
 
+function showDialog(message, options = {}) {
+  const overlay = document.querySelector("#appDialog");
+  document.querySelector("#dialogTitle").textContent = options.title || "提示";
+  document.querySelector("#dialogMessage").textContent = String(message || "");
+  document.querySelector("#dialogIcon").textContent = options.type === "error" ? "!" : "✓";
+  overlay.classList.toggle("error", options.type === "error");
+  overlay.classList.add("show");
+  overlay.setAttribute("aria-hidden", "false");
+  document.querySelector("#dialogConfirm").focus();
+}
+
+function hideDialog() {
+  const overlay = document.querySelector("#appDialog");
+  overlay.classList.remove("show", "error");
+  overlay.setAttribute("aria-hidden", "true");
+}
+
 function applyInitialState(state) {
   document.querySelector("#envExit").textContent = state.environmentExit || "检测中...";
   document.querySelector("#localIP").textContent = state.localIP || "-";
@@ -170,13 +187,13 @@ async function afterRouteAction(routes) {
 
 async function runRouteAction(action, emptyMessage) {
   if (selectedRouteIndex < 0) {
-    window.alert(emptyMessage || "请先选择一条转发配置");
+    showDialog(emptyMessage || "请先选择一条转发配置", { type: "error", title: "需要选择线路" });
     return;
   }
   try {
     await afterRouteAction(await action(selectedRouteIndex));
   } catch (error) {
-    window.alert(error);
+    showDialog(error, { type: "error", title: "操作失败" });
     await refreshLogs();
   }
 }
@@ -274,7 +291,7 @@ document.querySelector("#addRouteBtn").addEventListener("click", async (event) =
     await afterRouteAction(routes);
     document.querySelector('[data-page="routes"]').click();
   } catch (error) {
-    window.alert(`新增配置失败：${error}`);
+    showDialog(`新增配置失败：${error}`, { type: "error", title: "新增失败" });
   }
 });
 
@@ -303,14 +320,14 @@ document.querySelector("#stopAllBtn").addEventListener("click", async () => {
 
 document.querySelector("#enableSystemProxyBtn").addEventListener("click", async () => {
   if (selectedRouteIndex < 0) {
-    window.alert("请先选择一条转发配置");
+    showDialog("请先选择一条转发配置", { type: "error", title: "需要选择线路" });
     return;
   }
   try {
     await backend.EnableSystemProxy(selectedRouteIndex);
     await refreshLogs();
   } catch (error) {
-    window.alert(error);
+    showDialog(error, { type: "error", title: "系统代理失败" });
   }
 });
 
@@ -319,7 +336,7 @@ document.querySelector("#disableSystemProxyBtn").addEventListener("click", async
     await backend.DisableSystemProxy();
     await refreshLogs();
   } catch (error) {
-    window.alert(error);
+    showDialog(error, { type: "error", title: "系统代理失败" });
   }
 });
 
@@ -342,11 +359,25 @@ document.querySelector("#fetchProviderBtn").addEventListener("click", async () =
       portEnd: document.querySelector("#portEndInput").value,
     });
     await afterRouteAction(routes);
-    window.alert("API 获取成功，已加入转发列表。");
+    showDialog("API 获取成功，已加入转发列表。请到转发列表查看并启动对应端口。", {
+      title: "获取成功",
+    });
     document.querySelector('[data-page="routes"]').click();
   } catch (error) {
-    window.alert(`API 获取失败：${error}`);
+    showDialog(`API 获取失败：${error}`, { type: "error", title: "获取失败" });
     await refreshLogs();
+  }
+});
+
+document.querySelector("#dialogConfirm").addEventListener("click", hideDialog);
+document.querySelector("#appDialog").addEventListener("click", (event) => {
+  if (event.target.id === "appDialog") {
+    hideDialog();
+  }
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    hideDialog();
   }
 });
 
