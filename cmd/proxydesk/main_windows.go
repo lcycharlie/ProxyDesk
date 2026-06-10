@@ -27,6 +27,7 @@ import (
 	"proxydesk/internal/routeproxy"
 	"proxydesk/internal/routing"
 	"proxydesk/internal/systemproxy"
+	"proxydesk/internal/uistate"
 )
 
 type publicIPInfo struct {
@@ -252,16 +253,14 @@ func main() {
 		refreshOnePortCombo(portCB)
 		refreshOnePortCombo(apiPortCB)
 	}
-	updateRunningProtocolLabels := func(route core.PortRoute) {
-		if localProtocolLabel != nil {
-			if route.LocalProtocol == core.ProtocolSOCKS5 {
-				_ = localProtocolLabel.SetText("SOCKS5")
-			} else {
-				_ = localProtocolLabel.SetText("HTTP/HTTPS")
-			}
-		}
-		if upstreamProtocolLabel != nil {
-			_ = upstreamProtocolLabel.SetText(string(route.Protocol))
+	statusToneColor := func(tone uistate.StatusTone) walk.Color {
+		switch tone {
+		case uistate.StatusToneRunning:
+			return walk.RGB(22, 120, 75)
+		case uistate.StatusToneChanged:
+			return walk.RGB(185, 100, 0)
+		default:
+			return walk.RGB(123, 94, 0)
 		}
 	}
 	markConfigChanged := func() {
@@ -271,36 +270,13 @@ func main() {
 		if routes.Selected() < 0 || !routes.IsRunning(routes.Selected()) || statusLabel == nil {
 			return
 		}
-		_ = statusLabel.SetText("配置已变更，需重启")
-		statusLabel.SetTextColor(walk.RGB(185, 100, 0))
+		text, tone := uistate.ChangedStatus()
+		_ = statusLabel.SetText(text)
+		statusLabel.SetTextColor(statusToneColor(tone))
 	}
 	portRangeChanged := func() {
 		refreshPortOptions(0)
 		markConfigChanged()
-	}
-	routeDisplay := func(snapshot routeproxy.Snapshot) string {
-		status := "未启动"
-		if snapshot.Running {
-			status = "运行中"
-		}
-		exit := "-"
-		if snapshot.Route.LastExitIP != "" {
-			exit = publicIPInfo{
-				IP:      snapshot.Route.LastExitIP,
-				Country: snapshot.Route.LastExitCountry,
-				Region:  snapshot.Route.LastExitRegion,
-				City:    snapshot.Route.LastExitCity,
-			}.Display()
-		}
-		return fmt.Sprintf("[%s] %s:%d  本地:%s  上游:%s %s  实际出口:%s",
-			status,
-			snapshot.Route.LocalHost,
-			snapshot.Route.LocalHTTPPort,
-			snapshot.Route.LocalProtocol,
-			snapshot.Route.Upstream.Protocol,
-			snapshot.Route.Upstream.Address(),
-			exit,
-		)
 	}
 	refreshRouteList := func() {
 		if routeList == nil {
@@ -309,7 +285,7 @@ func main() {
 		snapshots := routes.Snapshots()
 		items := make([]string, len(snapshots))
 		for i, snapshot := range snapshots {
-			items[i] = routeDisplay(snapshot)
+			items[i] = uistate.RouteListItem(snapshot)
 		}
 		_ = routeList.SetModel(items)
 		if len(items) == 0 {
@@ -324,29 +300,21 @@ func main() {
 		_ = routeList.SetCurrentIndex(selected)
 	}
 	showRoute := func(route core.PortRoute, running bool) {
-		if running {
-			_ = statusLabel.SetText("运行中")
-			statusLabel.SetTextColor(walk.RGB(22, 120, 75))
-		} else {
-			_ = statusLabel.SetText("未启动")
-			statusLabel.SetTextColor(walk.RGB(123, 94, 0))
+		view := uistate.RouteDetail(route, running)
+		_ = statusLabel.SetText(view.Status)
+		statusLabel.SetTextColor(statusToneColor(view.StatusTone))
+		if localProtocolLabel != nil {
+			_ = localProtocolLabel.SetText(view.LocalProtocol)
 		}
-		updateRunningProtocolLabels(route)
-		_ = upstreamLabel.SetText(proxyparse.Format(route.Upstream))
-		exitDisplay := "-"
-		if route.LastExitIP != "" {
-			exitDisplay = publicIPInfo{
-				IP:      route.LastExitIP,
-				Country: route.LastExitCountry,
-				Region:  route.LastExitRegion,
-				City:    route.LastExitCity,
-			}.Display()
+		if upstreamProtocolLabel != nil {
+			_ = upstreamProtocolLabel.SetText(view.UpstreamProtocol)
 		}
-		_ = exitIPLabel.SetText(exitDisplay)
+		_ = upstreamLabel.SetText(view.UpstreamDisplay)
+		_ = exitIPLabel.SetText(view.ExitDisplay)
 		if actualExitLabel != nil {
-			_ = actualExitLabel.SetText(exitDisplay)
+			_ = actualExitLabel.SetText(view.ExitDisplay)
 		}
-		_ = errorLabel.SetText("-")
+		_ = errorLabel.SetText(view.ErrorDisplay)
 	}
 	loadSelectedRoute := func() {
 		if routeList == nil {
