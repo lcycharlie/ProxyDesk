@@ -1337,9 +1337,20 @@ func stringIndex(values []string, value string) int {
 }
 
 func filterCountries(countries []string, query string) []string {
-	query = strings.ToLower(strings.TrimSpace(query))
+	rawQuery := strings.TrimSpace(query)
+	query = strings.ToLower(rawQuery)
 	if query == "" {
 		return append([]string{}, countries...)
+	}
+	if len([]rune(rawQuery)) == 2 && isASCIIAlpha(rawQuery) {
+		codeQuery := strings.ToUpper(rawQuery)
+		for _, country := range countries {
+			code, _ := splitCountry(country)
+			if strings.EqualFold(code, codeQuery) {
+				return []string{country}
+			}
+		}
+		return []string{}
 	}
 	filtered := []string{}
 	for _, country := range countries {
@@ -1352,6 +1363,15 @@ func filterCountries(countries []string, query string) []string {
 	return filtered
 }
 
+func isASCIIAlpha(value string) bool {
+	for _, r := range value {
+		if (r < 'A' || r > 'Z') && (r < 'a' || r > 'z') {
+			return false
+		}
+	}
+	return value != ""
+}
+
 func localizeCountryOptions(raw []string) []string {
 	options := make([]string, 0, len(raw))
 	for _, item := range raw {
@@ -1361,18 +1381,9 @@ func localizeCountryOptions(raw []string) []string {
 		if name == "" {
 			name = englishName
 		}
-		options = append(options, fmt.Sprintf("%s %s (%s)", countryFlag(code), name, code))
+		options = append(options, fmt.Sprintf("%s (%s)", name, code))
 	}
 	return options
-}
-
-func countryFlag(code string) string {
-	code = strings.ToUpper(strings.TrimSpace(code))
-	if len(code) != 2 {
-		return ""
-	}
-	runes := []rune(code)
-	return string([]rune{runes[0] - 'A' + 0x1F1E6, runes[1] - 'A' + 0x1F1E6})
 }
 
 func chineseCountryName(code string) string {
