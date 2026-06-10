@@ -11,9 +11,10 @@ go build -tags desktop,production -ldflags="-H windowsgui -s -w" -o dist/ProxyDe
 
 if (Get-Command iscc -ErrorAction SilentlyContinue) {
     iscc build/windows/ProxyDesk.iss
-    Write-Host "Built dist/ProxyDeskSetup.exe"
+    Write-Host "Built dist/ProxyDeskSetup.exe with modern UI app"
 } else {
     Write-Host "Inno Setup is not installed; skipped installer build."
 }
 
 Write-Host "Built dist/ProxyDesk.exe"
+Write-Host "Built dist/ProxyDeskModern.exe"
