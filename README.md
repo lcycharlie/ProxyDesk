@@ -46,12 +46,24 @@ does not require OpenGL on the target Windows computer.
 ## Current MVP
 
 - Windows desktop UI with no login.
-- Country selection.
+- Country and city/state selection for supplier API extraction.
 - Upstream proxy input in `host:port:user:pass` format.
-- Supplier API fetch by selected country.
+- Supplier API fetch by selected country and optional city/state.
 - Local HTTP proxy forwarding, including HTTPS `CONNECT`.
+- Local SOCKS5 proxy forwarding.
+- Multiple simultaneous port routes.
 - Optional Windows system proxy switch.
 - Exit IP check through the local port.
+- System tray minimize-on-close behavior.
+- Windows installer build through GitHub Actions.
 
-SOCKS5 is represented in the model/UI, and the next implementation step is
-adding the local SOCKS5 listener and multiple simultaneous port routes.
+## UI migration
+
+The current production UI is built with Walk native Windows controls.
+Modern UI migration will be done in parallel so existing features remain
+available while the new desktop console is built.
+
+See:
+
+- `docs/ui-migration-plan.md`
+- `docs/feature-parity-checklist.md`
