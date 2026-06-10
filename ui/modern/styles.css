@@ -501,6 +501,12 @@ tr.selected td {
   background: #edfffa;
 }
 
+.empty-row {
+  color: var(--muted);
+  text-align: center;
+  padding: 44px 16px;
+}
+
 .settings-layout {
   display: grid;
   grid-template-columns: 160px 1fr;

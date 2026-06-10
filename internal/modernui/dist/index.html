@@ -123,20 +123,20 @@
               <p class="eyebrow">Route</p>
               <h2>线路配置</h2>
             </div>
-            <button class="btn primary">新增配置</button>
+            <button class="btn primary" id="addRouteBtn">新增配置</button>
           </div>
 
           <form class="card form-card">
             <label>
               <span>本地协议</span>
-              <select>
+              <select id="localProtocolSelect">
                 <option>HTTP/HTTPS</option>
                 <option selected>SOCKS5</option>
               </select>
             </label>
             <label>
               <span>上游协议</span>
-              <select>
+              <select id="upstreamProtocolSelect">
                 <option>HTTP</option>
                 <option selected>SOCKS5</option>
               </select>
@@ -151,7 +151,7 @@
             </label>
             <label class="span-2">
               <span>上游代理</span>
-              <textarea>global.rpip.lokiproxy.com:35001:USER096836-session-5MHDsJKATDS:48a951</textarea>
+              <textarea id="proxyLineInput">global.rpip.lokiproxy.com:35001:USER096836-session-5MHDsJKATDS:48a951</textarea>
             </label>
           </form>
         </section>
@@ -181,24 +181,7 @@
                   <th>实际出口</th>
                 </tr>
               </thead>
-              <tbody>
-                <tr class="selected">
-                  <td><span class="badge badge-running">运行中</span></td>
-                  <td>192.168.31.140:10000</td>
-                  <td>SOCKS5</td>
-                  <td>SOCKS5</td>
-                  <td>global.rpip.lokiproxy.com:35001</td>
-                  <td>75.82.36.185 US</td>
-                </tr>
-                <tr>
-                  <td><span class="badge badge-idle">未启动</span></td>
-                  <td>192.168.31.140:10001</td>
-                  <td>HTTP/HTTPS</td>
-                  <td>HTTP</td>
-                  <td>global.rpip.lokiproxy.com:35001</td>
-                  <td>-</td>
-                </tr>
-              </tbody>
+              <tbody id="routeTableBody"></tbody>
             </table>
           </div>
         </section>

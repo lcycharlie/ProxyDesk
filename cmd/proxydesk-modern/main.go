@@ -14,8 +14,10 @@ import (
 	"github.com/wailsapp/wails/v2/pkg/options"
 	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
 
+	core "proxydesk/internal/app"
 	"proxydesk/internal/catalog"
 	"proxydesk/internal/modernui"
+	"proxydesk/internal/routeproxy"
 	"proxydesk/internal/routing"
 	"proxydesk/internal/uistate"
 )
@@ -23,12 +25,16 @@ import (
 type App struct {
 	ctx     context.Context
 	localIP string
+	routes  *routeproxy.Manager
+	logs    []string
 }
 
 func NewApp() *App {
-	return &App{
+	app := &App{
 		localIP: detectLANIP(),
 	}
+	app.routes = routeproxy.NewManager(app.appendLog)
+	return app
 }
 
 func (a *App) startup(ctx context.Context) {
@@ -40,16 +46,35 @@ func (a *App) AppName() string {
 }
 
 type InitialState struct {
-	AppName           string   `json:"appName"`
-	LocalIP           string   `json:"localIP"`
-	EnvironmentExit   string   `json:"environmentExit"`
-	PortStart         string   `json:"portStart"`
-	PortEnd           string   `json:"portEnd"`
-	PortOptions       []string `json:"portOptions"`
-	Countries         []string `json:"countries"`
-	Cities            []string `json:"cities"`
-	LocalProtocols    []string `json:"localProtocols"`
-	UpstreamProtocols []string `json:"upstreamProtocols"`
+	AppName           string     `json:"appName"`
+	LocalIP           string     `json:"localIP"`
+	EnvironmentExit   string     `json:"environmentExit"`
+	PortStart         string     `json:"portStart"`
+	PortEnd           string     `json:"portEnd"`
+	PortOptions       []string   `json:"portOptions"`
+	Countries         []string   `json:"countries"`
+	Cities            []string   `json:"cities"`
+	LocalProtocols    []string   `json:"localProtocols"`
+	UpstreamProtocols []string   `json:"upstreamProtocols"`
+	Routes            []RouteRow `json:"routes"`
+}
+
+type ManualRouteRequest struct {
+	LocalProtocol    string `json:"localProtocol"`
+	UpstreamProtocol string `json:"upstreamProtocol"`
+	LocalPort        string `json:"localPort"`
+	ProxyLine        string `json:"proxyLine"`
+}
+
+type RouteRow struct {
+	Index            int    `json:"index"`
+	Status           string `json:"status"`
+	Running          bool   `json:"running"`
+	LocalAddress     string `json:"localAddress"`
+	LocalProtocol    string `json:"localProtocol"`
+	UpstreamProtocol string `json:"upstreamProtocol"`
+	UpstreamAddress  string `json:"upstreamAddress"`
+	ExitDisplay      string `json:"exitDisplay"`
 }
 
 func (a *App) GetInitialState() InitialState {
@@ -68,6 +93,7 @@ func (a *App) GetInitialState() InitialState {
 		Cities:            catalog.CityOptions("US"),
 		LocalProtocols:    []string{"HTTP/HTTPS", "SOCKS5"},
 		UpstreamProtocols: []string{"HTTP", "SOCKS5"},
+		Routes:            a.GetRoutes(),
 	}
 }
 
@@ -83,6 +109,52 @@ func (a *App) RefreshEnvironmentExit() string {
 		return "检测失败"
 	}
 	return environmentCountryDisplay(info)
+}
+
+func (a *App) AddManualRoute(input ManualRouteRequest) ([]RouteRow, error) {
+	route, err := routing.BuildManualRoute(routing.ManualRouteInput{
+		ListenHost:       a.localIP,
+		PortText:         input.LocalPort,
+		PortRange:        defaultPortRange(),
+		UsedPorts:        a.routes.UsedPorts(0),
+		LocalProtocol:    parseLocalProtocol(input.LocalProtocol),
+		UpstreamProtocol: parseUpstreamProtocol(input.UpstreamProtocol),
+		ProxyLine:        input.ProxyLine,
+		Now:              time.Now(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	a.routes.Add(route)
+	a.appendLog("已新增转发配置：%s:%d -> %s", route.LocalHost, route.LocalHTTPPort, route.Upstream.Address())
+	return a.GetRoutes(), nil
+}
+
+func (a *App) GetRoutes() []RouteRow {
+	snapshots := a.routes.Snapshots()
+	rows := make([]RouteRow, 0, len(snapshots))
+	for index, snapshot := range snapshots {
+		route := snapshot.Route
+		rows = append(rows, RouteRow{
+			Index:            index,
+			Status:           statusText(snapshot.Running),
+			Running:          snapshot.Running,
+			LocalAddress:     net.JoinHostPort(route.LocalHost, fmt.Sprintf("%d", route.LocalHTTPPort)),
+			LocalProtocol:    uistate.LocalProtocolDisplay(route.LocalProtocol),
+			UpstreamProtocol: uistate.UpstreamProtocolDisplay(route.Protocol),
+			UpstreamAddress:  route.Upstream.Address(),
+			ExitDisplay:      uistate.ExitDisplay(route),
+		})
+	}
+	return rows
+}
+
+func (a *App) GetPortOptions() []string {
+	input := uistate.PortRangeText{
+		Start: fmt.Sprintf("%d", routing.DefaultPortStart),
+		End:   fmt.Sprintf("%d", routing.DefaultPortEnd),
+	}
+	return uistate.AvailablePortOptions(input, a.routes.UsedPorts(0))
 }
 
 func main() {
@@ -104,6 +176,35 @@ func main() {
 	if err != nil {
 		println("ProxyDesk modern UI startup failed:", err.Error())
 	}
+}
+
+func (a *App) appendLog(format string, args ...any) {
+	a.logs = append(a.logs, time.Now().Format("15:04:05")+"  "+fmt.Sprintf(format, args...))
+}
+
+func defaultPortRange() routing.PortRange {
+	return routing.PortRange{Start: routing.DefaultPortStart, End: routing.DefaultPortEnd}
+}
+
+func parseLocalProtocol(value string) core.Protocol {
+	if strings.EqualFold(strings.TrimSpace(value), string(core.ProtocolSOCKS5)) {
+		return core.ProtocolSOCKS5
+	}
+	return core.ProtocolHTTP
+}
+
+func parseUpstreamProtocol(value string) core.Protocol {
+	if strings.EqualFold(strings.TrimSpace(value), string(core.ProtocolSOCKS5)) {
+		return core.ProtocolSOCKS5
+	}
+	return core.ProtocolHTTP
+}
+
+func statusText(running bool) string {
+	if running {
+		return "运行中"
+	}
+	return "未启动"
 }
 
 type publicIPInfo struct {
